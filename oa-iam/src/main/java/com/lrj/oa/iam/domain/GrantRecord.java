@@ -2,12 +2,14 @@ package com.lrj.oa.iam.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.lrj.oa.common.mybatis.JsonbTypeHandler;
 
 import java.time.OffsetDateTime;
 
 /** 一条授权。主体 × 角色 × 作用域 × 时效，全部权限语义的收敛点。 */
-@TableName("oa_iam.grant_record")
+@TableName(value = "oa_iam.grant_record", autoResultMap = true)
 public class GrantRecord {
     @TableId(type = IdType.AUTO) private Long id;
     private Long tenantId;
@@ -15,6 +17,7 @@ public class GrantRecord {
     private String subjectId;
     private Long roleId;
     private String scopeType;
+    @TableField(typeHandler = JsonbTypeHandler.class)
     private String scopeOrgIds;          // jsonb，用 String 承接，业务侧自己解析
     private Boolean includeDescendants;
     private String grantType;

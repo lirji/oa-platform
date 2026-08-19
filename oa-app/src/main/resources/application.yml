@@ -79,5 +79,17 @@ oa:
   authz:
     spicedb:
       enabled: false           # 知识库子域挂 auth-platform SpiceDB，Phase 7 才开
+  flow:
+    workflow:
+      # REMOTE = 接真 workflow-platform（:8300）；LOCAL = 用本地测试替身跑端到端。
+      # 接 REMOTE 前需要中台补一个通用 completeTask 端点并部署 oa-generic-approval-v1 BPMN。
+      mode: ${OA_WORKFLOW_MODE:REMOTE}
+    outbox:
+      poll-ms: 1000
+      batch-size: 100
+    todo:
+      reconcile-ms: 60000      # 与中台对账（生命周期事件是 best-effort，会漏）
+    approval:
+      max-levels: 5
   workflow:
-    enabled: false             # workflow-platform 集成，Phase 4 才开
+    enabled: false             # 旧开关，保留兼容
