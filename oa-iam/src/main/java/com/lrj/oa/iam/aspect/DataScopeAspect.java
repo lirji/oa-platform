@@ -29,6 +29,8 @@ import java.lang.reflect.Method;
 @Order(Ordered.HIGHEST_PRECEDENCE + 30)
 public class DataScopeAspect {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DataScopeAspect.class);
+
     private final PermissionEngine engine;
 
     public DataScopeAspect(PermissionEngine engine) { this.engine = engine; }
@@ -45,7 +47,16 @@ public class DataScopeAspect {
 
         DataScopeContext.set(ann, rule);
         try {
-            return jp.proceed();
+            Object result = jp.proceed();
+            if (!DataScopeContext.wasConsumed()) {
+                // 设了数据权限却没有任何 MyBatis 查询取走它 —— 说明这个方法要么根本没查库，
+                // 要么用的是 JdbcTemplate 这类绕过拦截器的路径。后者是个静默的全量泄露：
+                // 注解明晃晃写着，行为却完全没有过滤。必须吵出来。
+                log.warn("★ @DataScope 未生效：{}#{} 设置了数据权限上下文，但没有任何 MyBatis 查询消费它。"
+                                + " 用 JdbcTemplate 手写 SQL 会绕过拦截器 —— 该方法可能正在返回全量数据。",
+                        jp.getSignature().getDeclaringType().getSimpleName(), jp.getSignature().getName());
+            }
+            return result;
         } finally {
             // 嵌套调用与线程复用都会让残留的上下文污染下一次查询，必须清
             DataScopeContext.clear();

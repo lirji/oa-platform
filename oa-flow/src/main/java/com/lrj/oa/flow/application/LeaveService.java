@@ -1,6 +1,7 @@
 package com.lrj.oa.flow.application;
 
 import com.lrj.oa.common.api.ResultCode;
+import com.lrj.oa.common.id.SegmentIdGenerator;
 import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.flow.api.dto.LeaveBalanceView;

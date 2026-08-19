@@ -55,6 +55,19 @@ JDK21 虚拟线程在 `synchronized` 里阻塞会 pin 载体线程。Phase 0 的
    **HTTP 500 + 空 body**。已移到 `oa-common`，四个可部署单元共用。
 7. **macOS 的 BSD `date` 不支持 `%3N`**，且不报错、原样吐出字母 `N`，
    于是 `|| fallback` 根本不触发。冒烟里取毫秒一律用 `python3`。
+8. **`@DataScope` 只对走 MyBatis 的查询生效**。标在用 JdbcTemplate 手写 SQL 的方法上，
+   切面照常设上下文、拦截器永远不被调用 —— 注解明晃晃写着，实际返回全量数据。
+   已在 `DataScopeAspect` 加"设了却没人消费"的告警；但正确做法是需要数据权限就用 Mapper。
+9. **裸 SQL 改 `grant_record` 会绕过失效协议**：epoch 不 bump，L1(进程内)+L2(Redis) 里的
+   旧快照继续放行。清 Redis 也不够 —— **必须先 FLUSHDB 再重启**，反过来 L1 已从旧 L2 装载好了。
+   冒烟里授权/收权一律走 API。（本轮排查最久的第二个，靠 `/iam/admin/explain` 的
+   `consistent=false` 才定位到。）
+10. **PG 自带分词切不了中文**：`to_tsvector('simple','关于国庆放假的通知')` 是一个整 token，
+    搜"放假"永远 0 行，接口返回 200 + 空数组，像"确实没这份文件"。已改 `pg_trgm` + ILIKE。
+11. **改已执行过的迁移 = Flyway checksum 不匹配、启动直接失败**。这是它该有的行为，
+    别去 repair 绕过；兼容逻辑写进新版本号的迁移里。
+12. **冒烟脚本里无参 `wait` 会等上你用 `&` 起的应用进程**（它永不退出）。
+    并发请求一律用 `xargs -P`，别用 `cmd & ... wait`。
 
 ## 本机现实
 - **Testcontainers 跑不起来** → 集成验证一律写成 bash 冒烟脚本打运行中的 compose 容器。
@@ -74,6 +87,7 @@ deploy/scripts/phase4-flow-smoke.sh         审批底座                    25 �
 deploy/scripts/phase4b-remote-smoke.sh      审批·接真中台（集成）        28 断言
 deploy/scripts/phase5-attendance-smoke.sh   考勤 + 早高峰压测           19 断言
 deploy/scripts/phase6-notify-smoke.sh       通知 + 万人公告 + 位图回执   28 断言
+deploy/scripts/phase7-doc-admin-smoke.sh    公文/知识库/会议室排他约束   45 断言
 deploy/scripts/WsProbe.java                 长连探针（curl 不会说 WebSocket）
 ```
 改完代码至少跑相关阶段的那个。压测的延迟数字要看并发（Little 定律），
