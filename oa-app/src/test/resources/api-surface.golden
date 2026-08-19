@@ -31,6 +31,7 @@ GET    /api/v1/iam/admin/explain                            oa:iam:admin
 GET    /api/v1/iam/admin/preview                            oa:iam:admin
 GET    /api/v1/iam/admin/why                                oa:iam:admin
 GET    /api/v1/iam/delegations                              oa:iam:delegate
+GET    /api/v1/iam/elevations/mine                          oa:iam:elevate
 GET    /api/v1/iam/grants                                   oa:iam:view
 GET    /api/v1/iam/permissions/catalog                      oa:iam:view
 GET    /api/v1/iam/roles                                    oa:iam:view

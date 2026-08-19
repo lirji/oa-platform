@@ -25,7 +25,7 @@ public class BusinessDocController {
     /** 支持的单据类型 + 各自的 JSON Schema。前端据此渲染表单，不必为每类写一个页面。 */
     @GetMapping("/types")
     @RequiresPerm("oa:doc-flow:submit")
-    public Result<List<Map<String, Object>>> types() { return Result.ok(service.supportedTypes()); }
+    public Result<List<BusinessDocService.DocType>> types() { return Result.ok(service.supportedTypes()); }
 
     @PostMapping
     @RequiresPerm("oa:doc-flow:submit")

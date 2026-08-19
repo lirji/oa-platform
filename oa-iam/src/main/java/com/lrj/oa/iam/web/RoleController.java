@@ -100,4 +100,46 @@ public class RoleController {
                         !"DISABLED".equals(rs.getString("status")), rs.getString("remark"))));
         return Result.ok(out);
     }
+
+    /** 一条活跃的 JIT 提权。前端据 validTo 做倒计时与到期后的回落。 */
+    public record ElevationView(Long grantId, Long roleId, String roleCode, String roleName,
+                                java.time.OffsetDateTime grantedAt,
+                                java.time.OffsetDateTime validTo, Long remainingMs, String reason) {}
+
+    /**
+     * 我当前生效中的临时提权。
+     *
+     * <p><b>为什么必须有</b>：{@code /me/permissions} 只给 {@code elevatedCodes}（我现在提权到了什么），
+     * <b>不给到期时间</b>。前端想显示"提权中，剩 12 分钟"就无处取数 ——
+     * 而 {@code /explain} 的 {@code expiresInMs} 是<b>快照缓存 TTL</b>（5 分钟）不是提权 TTL，
+     * 拿它当倒计时会显示一个假数字，到点后 UI 误报"提权已过期"而权限其实还在。
+     *
+     * <p>权限点用 {@code oa:iam:elevate}（EMPLOYEE 就有）而不是 {@code oa:iam:view}：
+     * 查自己的提权是自助行为，要求管理员权限等于让这个功能对普通员工不可用。
+     */
+    @GetMapping("/elevations/mine")
+    @RequiresPerm("oa:iam:elevate")
+    public Result<List<ElevationView>> myElevations() {
+        String me = com.lrj.oa.security.context.UserContextHolder.require().userId();
+        List<ElevationView> out = new ArrayList<>();
+        jdbc.query("""
+                SELECT g.id, g.role_id, r.code AS role_code, r.name AS role_name,
+                       g.granted_at, g.valid_to, g.reason
+                  FROM oa_iam.grant_record g JOIN oa_iam.role r ON r.id = g.role_id
+                 WHERE g.subject_type = 'USER' AND g.subject_id = ?
+                   AND g.grant_type = 'TEMPORARY'
+                   AND g.revoked_at IS NULL
+                   AND g.valid_to > now()
+                 ORDER BY g.valid_to
+                """, (RowCallbackHandler) rs -> {
+            var validTo = rs.getObject("valid_to", java.time.OffsetDateTime.class);
+            long remain = validTo == null ? 0
+                    : java.time.Duration.between(java.time.OffsetDateTime.now(), validTo).toMillis();
+            out.add(new ElevationView(rs.getLong("id"), rs.getLong("role_id"),
+                    rs.getString("role_code"), rs.getString("role_name"),
+                    rs.getObject("granted_at", java.time.OffsetDateTime.class),
+                    validTo, Math.max(remain, 0), rs.getString("reason")));
+        }, me);
+        return Result.ok(out);
+    }
 }

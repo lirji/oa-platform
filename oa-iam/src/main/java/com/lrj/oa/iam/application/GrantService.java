@@ -287,10 +287,22 @@ public class GrantService {
      * <p>一条权限可能有<b>多个</b>来源（本人被直接授权 + 所在部门也被授权），
      * 所以返回列表而不是单条：撤销其中一条不一定就失去权限，这件事必须让人看见。
      */
-    public java.util.List<java.util.Map<String, Object>> explainSources(String userId, String permCode) {
+    /**
+     * 一条来源。★ 用类型化 record 而不是 {@code Map<String,Object>} —— CLAUDE.md 硬约束第 9 条：
+     * PG 把列名转小写、MyBatis 又可能转驼峰，两层叠加后前端取 {@code s.roleCode} 还是
+     * {@code s.role_code} 全靠猜，猜错静默拿到 undefined。
+     */
+    public record PermSource(Long grantId, String subjectType, String subjectId,
+                             String roleCode, String roleName, Integer roleDistance,
+                             String grantType, String scopeType, Boolean includeDescendants,
+                             java.time.OffsetDateTime validTo, String reason,
+                             String grantedBy, java.time.OffsetDateTime grantedAt,
+                             String via, String rolePath) {}
+
+    public java.util.List<PermSource> explainSources(String userId, String permCode) {
         // 一次查完：直接授权（USER）+ 组织授权（ORG_UNIT，按 org_path 前缀继承）+ 岗位授权。
         // 角色继承走 role_inherit 闭包表，所以"父角色持有该权限"也会被算进来。
-        return jdbc.queryForList("""
+        return jdbc.query("""
                 WITH my_orgs AS (
                     SELECT o.id AS org_id, o.path AS org_path, o.name AS org_name
                       FROM oa_org.employee e
@@ -351,6 +363,16 @@ public class GrantService {
                             SELECT 1 FROM my_positions mp WHERE mp.position_id::text = g.subject_id))
                    )
                  ORDER BY g.id
-                """, userId, userId, permCode, userId);
+                """, (rs, i) -> new PermSource(
+                        rs.getLong("grant_id"), rs.getString("subject_type"), rs.getString("subject_id"),
+                        rs.getString("role_code"), rs.getString("role_name"),
+                        (Integer) rs.getObject("role_distance"),
+                        rs.getString("grant_type"), rs.getString("scope_type"),
+                        (Boolean) rs.getObject("include_descendants"),
+                        rs.getObject("valid_to", java.time.OffsetDateTime.class),
+                        rs.getString("reason"), rs.getString("granted_by"),
+                        rs.getObject("granted_at", java.time.OffsetDateTime.class),
+                        rs.getString("via"), rs.getString("role_path")),
+                userId, userId, permCode, userId);
     }
 }

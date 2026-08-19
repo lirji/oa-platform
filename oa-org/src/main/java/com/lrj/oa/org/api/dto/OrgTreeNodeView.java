@@ -6,5 +6,11 @@ import java.util.List;
 public record OrgTreeNodeView(
         Long id, Long parentId, String code, String name, String type,
         String path, int depth, int sortOrder, String status,
-        String leaderUserId, int memberCount, List<OrgTreeNodeView> children
+        String leaderUserId,
+        /**
+         * 成员数。★ 为 null 表示【未统计】而不是 0 —— 树接口默认不带，需要时另查。
+         * 之前用 -1 当哨兵，前端直接渲染会显示一个看起来像真实数据的 -1。
+         */
+        Integer memberCount,
+        List<OrgTreeNodeView> children
 ) {}

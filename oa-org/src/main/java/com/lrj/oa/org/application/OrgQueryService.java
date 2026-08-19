@@ -89,8 +89,9 @@ public class OrgQueryService implements OrgQueryApi {
         }
         return new OrgTreeNodeView(n.id(), n.parentId(), n.code(), n.name(), n.type().name(),
                 n.path(), n.depth(), n.sortOrder(), n.status().name(), n.leaderUserId(),
-                // 成员数是库查询，只在需要时取；树接口默认不带（-1 表示未统计）
-                -1, children);
+                // 成员数是库查询，只在需要时取；树接口默认不带。
+                // 用 null 而不是 -1：-1 会被前端当成一个真实的数直接渲染出来。
+                null, children);
     }
 
     // ───────────────────────────────────────────── 人（查库）

@@ -18,6 +18,11 @@ import java.util.Map;
 @RequestMapping("/api/v1/flow/todos")
 public class WorkbenchController {
 
+    /** 我发起的一张单据。请假与 11 类通用单据在这里对齐成同一形状。 */
+    public record MyApplication(String bizType, String docNo, String status, String title,
+                                String summary, java.math.BigDecimal amount,
+                                java.math.BigDecimal days, java.time.OffsetDateTime createdAt) {}
+
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private final TodoService todoService;
@@ -64,14 +69,14 @@ public class WorkbenchController {
      */
     @GetMapping("/mine")
     @RequiresPerm("oa:flow:todo:view")
-    public Result<List<Map<String, Object>>> myApplications(
+    public Result<List<MyApplication>> myApplications(
             @RequestParam(required = false) String bizType,
             @RequestParam(defaultValue = "50") int limit) {
         String me = UserContextHolder.require().userId();
         int cap = Math.min(Math.max(limit, 1), 200);
         // UNION ALL 两张表：请假有独立表（额度语义），其余 11 类在 business_doc。
         // 列名对齐后按 created_at 统一排序 —— 前端不该关心它们分别存在哪。
-        List<Map<String, Object>> rows = jdbc.queryForList("""
+        List<MyApplication> rows = jdbc.query("""
                 SELECT * FROM (
                     SELECT 'LEAVE' AS biz_type, r.request_no AS doc_no, r.status,
                            t.name || ' ' || r.days || ' 天' AS title,
@@ -89,7 +94,12 @@ public class WorkbenchController {
                 WHERE (?::text IS NULL OR x.biz_type = ?::text)
                 ORDER BY x.created_at DESC
                 LIMIT ?
-                """, me, me, bizType, bizType, cap);
+                """, (rs, i) -> new MyApplication(
+                        rs.getString("biz_type"), rs.getString("doc_no"), rs.getString("status"),
+                        rs.getString("title"), rs.getString("summary"),
+                        rs.getBigDecimal("amount"), rs.getBigDecimal("days"),
+                        rs.getObject("created_at", java.time.OffsetDateTime.class)),
+                me, me, bizType, bizType, cap);
         return Result.ok(rows);
     }
 }

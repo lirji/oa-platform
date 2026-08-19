@@ -230,15 +230,27 @@ public class BusinessDocService {
         log.info("单据 {} 结束：{}", docNo, status);
     }
 
-    /** 支持的单据类型（前端渲染表单用）。 */
-    public List<Map<String, Object>> supportedTypes() {
-        return jdbc.queryForList("""
+    /** 一种单据类型：字段由 schema 描述、审批级数由 rule 描述。前端据此渲染表单，不必每类写一个页面。 */
+    public record DocType(String code, String name, int version, JsonNode schema,
+                          String driver, String rule) {}
+
+    /**
+     * 支持的单据类型（前端渲染表单用）。
+     *
+     * <p>★ schema 必须<b>解析成 JsonNode 再返回</b>：jsonb 列经 JDBC 出来是 PGobject，
+     * 直接进 Map 会被序列化成 {@code {"type":"jsonb","value":"<JSON 字符串>"}} ——
+     * 前端拿到的是一个套了两层的字符串，要二次 parse 才能用，而这件事没有任何地方会提示它。
+     */
+    public List<DocType> supportedTypes() {
+        return jdbc.query("""
                 SELECT t.code, t.name, t.version, t.schema_json, r.driver, r.description AS rule
                   FROM oa_flow.form_template t
                   LEFT JOIN oa_flow.approval_level_rule r ON r.biz_type = t.code
                  WHERE t.status = 'PUBLISHED' AND t.code <> 'LEAVE'
                  ORDER BY t.code
-                """);
+                """, (rs, i) -> new DocType(rs.getString("code"), rs.getString("name"),
+                        rs.getInt("version"), readJson(rs.getString("schema_json")),
+                        rs.getString("driver"), rs.getString("rule")));
     }
 
     // ───────────────────────────────── 工具
