@@ -5,6 +5,7 @@ import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.org.api.OrgQueryApi;
 import com.lrj.oa.org.api.dto.*;
 import com.lrj.oa.org.domain.*;
+import com.lrj.oa.org.infrastructure.cache.EmployeeCache;
 import com.lrj.oa.org.infrastructure.cache.OrgTreeCache;
 import com.lrj.oa.org.infrastructure.mapper.*;
 import org.springframework.stereotype.Service;
@@ -28,10 +29,13 @@ public class OrgQueryService implements OrgQueryApi {
     private final ReportingLineMapper reportingLineMapper;
     private final JobPositionMapper positionMapper;
     private final OrgUnitMapper orgUnitMapper;
+    private final EmployeeCache employeeCache;
 
     public OrgQueryService(OrgTreeCache treeCache, EmployeeMapper employeeMapper,
                            AssignmentMapper assignmentMapper, ReportingLineMapper reportingLineMapper,
-                           JobPositionMapper positionMapper, OrgUnitMapper orgUnitMapper) {
+                           JobPositionMapper positionMapper, OrgUnitMapper orgUnitMapper,
+                           EmployeeCache employeeCache) {
+        this.employeeCache = employeeCache;
         this.treeCache = treeCache;
         this.employeeMapper = employeeMapper;
         this.assignmentMapper = assignmentMapper;
@@ -91,27 +95,34 @@ public class OrgQueryService implements OrgQueryApi {
 
     // ───────────────────────────────────────────── 人（查库）
 
+    /**
+     * 走读缓存。身份装配与权限快照重算都会调它，不缓存的话同一个人一次请求要查好几遍
+     * ——万人冷启动时这些重复查询会把连接池排满（Phase 5 压测实测）。
+     */
     @Override
     public EmployeeView getEmployeeByUserId(String userId) {
-        Employee e = employeeMapper.selectByUserId(userId);
-        if (e == null) throw BusinessException.of(ResultCode.EMPLOYEE_NOT_FOUND, "员工不存在: " + userId);
-        return toView(e, assignmentMapper.selectActiveByEmployee(e.getId()));
+        EmployeeView v = employeeCache.employee(userId, uid -> {
+            Employee e = employeeMapper.selectByUserId(uid);
+            return e == null ? null : toView(e, assignmentMapper.selectActiveByEmployee(e.getId()));
+        });
+        if (v == null) throw BusinessException.of(ResultCode.EMPLOYEE_NOT_FOUND, "员工不存在: " + userId);
+        return v;
     }
 
     @Override
     public List<AssignmentView> activeAssignments(String userId) {
-        Employee e = employeeMapper.selectByUserId(userId);
-        if (e == null) return List.of();
-        return assignmentMapper.selectActiveByEmployee(e.getId()).stream().map(this::toView).toList();
+        return employeeCache.assignments(userId, uid -> {
+            Employee e = employeeMapper.selectByUserId(uid);
+            if (e == null) return List.of();
+            return assignmentMapper.selectActiveByEmployee(e.getId()).stream().map(this::toView).toList();
+        });
     }
 
     @Override
     public Long primaryOrgId(String userId) {
-        Employee e = employeeMapper.selectByUserId(userId);
-        if (e == null) return null;
-        return assignmentMapper.selectActiveByEmployee(e.getId()).stream()
-                .filter(a -> a.typeEnum() == AssignmentType.PRIMARY)
-                .map(EmployeeOrgAssignment::getOrgUnitId)
+        return activeAssignments(userId).stream()
+                .filter(a -> "PRIMARY".equals(a.assignmentType()))
+                .map(AssignmentView::orgUnitId)
                 .findFirst().orElse(null);
     }
 
@@ -232,6 +243,7 @@ public class OrgQueryService implements OrgQueryApi {
                 "nodes", snap.size(),
                 "roots", snap.rootIds().size(),
                 "snapshotVersion", snap.version(),
-                "dbVersion", orgUnitMapper.currentTreeVersion());
+                "dbVersion", orgUnitMapper.currentTreeVersion(),
+                "employeeCache", employeeCache.stats());
     }
 }
