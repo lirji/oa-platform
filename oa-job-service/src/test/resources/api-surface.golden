@@ -1,0 +1,6 @@
+GET    /api/v1/job/ping                                     (public)
+GET    /api/v1/job/runs                                     oa:job:run
+POST   /api/v1/job/attendance-daily                         oa:job:run
+POST   /api/v1/job/grant-expire                             oa:job:run
+POST   /api/v1/job/leave-annual-grant                       oa:job:run
+POST   /api/v1/job/partition-roll                           oa:job:run

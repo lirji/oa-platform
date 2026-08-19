@@ -1,0 +1,6 @@
+DELETE /api/v1/file/{id}                                    oa:file:upload
+GET    /api/v1/file/mine                                    oa:file:read
+GET    /api/v1/file/ping                                    (public)
+GET    /api/v1/file/{id}/download                           oa:file:read
+GET    /api/v1/file/{id}/presign                            oa:file:read
+POST   /api/v1/file                                         oa:file:upload

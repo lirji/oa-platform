@@ -1,0 +1,12 @@
+GET    /api/v1/announcements                                oa:announce:read
+GET    /api/v1/announcements/{id}/stats                     oa:announce:stats
+GET    /api/v1/notify/messages                              oa:notify:read
+GET    /api/v1/notify/messages/unread-count                 oa:notify:read
+GET    /api/v1/notify/ping                                  (public)
+GET    /api/v1/notify/ws-stats                              oa:notify:send
+POST   /api/v1/announcements                                oa:announce:publish
+POST   /api/v1/announcements/{id}/read                      oa:announce:read
+POST   /api/v1/announcements/{id}/revoke                    oa:announce:revoke
+POST   /api/v1/notify/messages                              oa:notify:send
+POST   /api/v1/notify/messages/read-all                     oa:notify:read
+POST   /api/v1/notify/messages/{id}/read                    oa:notify:read
