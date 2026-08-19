@@ -8,9 +8,26 @@
 | Phase 1 | 组织域（任意层级 / 一人多岗 / 汇报线 / 时间维度） | ✅ 冒烟 28/28 |
 | Phase 2 | 权限域（三级缓存判权 / 三类权限 / 临时授权三形态） | ✅ 冒烟 32/32 |
 | Phase 4 | 审批底座（事务发件箱 / 待办读模型 / 请假闭环） | ✅ 冒烟 25/25 |
+| Phase 4b | ★ 接真 workflow-platform（通用审批端到端） | ✅ 冒烟 28/28 |
 | Phase 5 | 考勤（早高峰削峰 / 分区 / 日结） | ✅ 冒烟 19/19 |
-| Phase 3 · 6 | PC 前端 · 移动端 | ⬜ 待做（动手前先走 `/frontend-plan`） |
-| Phase 7 · 8 | 文档行政 · 报表审计压测 | ⬜ 待做 |
+| Phase 6 | 通知（长连 / 万人公告 / 位图回执）— 后端 | ✅ 冒烟 28/28 |
+| Phase 7 | 文档与行政（公文号段 / 知识库 / 会议室排他约束） | ✅ 冒烟 45/45 |
+| Phase 8 | 报表 / 审计 / 跑批 / 文件 / ★渗透用例 | ✅ 冒烟 40/40 |
+| Phase 3 · 6 | PC 前端 `oa-console` · 移动端 `oa-mobile` | ⬜ 待做（动手前先走 `/frontend-plan`） |
+
+**后端已全部完成，冒烟共 231 条断言全绿。** 剩余只有前端与依赖前端的交付项。
+
+### 几个拿得出手的数字
+
+| 能力 | 实测 | 验收线 |
+|---|---|---|
+| 判权 P99 | **1.25 μs** | 1 ms |
+| 打卡吞吐（万人早高峰） | **512 QPS**，0 失败 0 重复 | 500 QPS |
+| 全员公告推送（10,000 人） | **502 ms** | 30 s |
+| 已读回执存储（8,000 人已读） | **15 字节**（RoaringBitmap run 编码） | 100 KB |
+| 会议室并发预定（100 请求抢同一时段） | **恰好 1 成功**（PG 排他约束） | 只成功 1 条 |
+| 万人组织装载（1,000 组织 + 10,000 员工） | **~0.7 s** | 30 s |
+| 考勤日结（10,000 人） | **165 ms** | 10 min |
 
 ---
 
@@ -78,12 +95,19 @@ curl -s localhost:8400/api/v1/system/ping
 ### 冒烟脚本（每个阶段一个，全部可复现）
 
 ```bash
-bash deploy/scripts/phase0-smoke.sh             # 基建 + 两道硬门禁         14 断言
-bash deploy/scripts/phase1-org-smoke.sh         # 组织域                   28 断言
-bash deploy/scripts/phase2-perm-smoke.sh        # 权限域                   32 断言
-bash deploy/scripts/phase4-flow-smoke.sh        # 审批底座                 25 断言
-bash deploy/scripts/phase5-attendance-smoke.sh  # 考勤 + 早高峰压测        19 断言
+bash deploy/scripts/phase0-smoke.sh              # 基建 + 两道硬门禁          14 断言
+bash deploy/scripts/phase1-org-smoke.sh          # 组织域                    28 断言
+bash deploy/scripts/phase2-perm-smoke.sh         # 权限域                    32 断言
+bash deploy/scripts/phase4-flow-smoke.sh         # 审批底座（本地替身）       25 断言
+bash deploy/scripts/phase4b-remote-smoke.sh      # 审批·接真中台（集成）      28 断言
+bash deploy/scripts/phase5-attendance-smoke.sh   # 考勤 + 早高峰压测         19 断言
+bash deploy/scripts/phase6-notify-smoke.sh       # 通知 + 万人公告 + 位图回执 28 断言
+bash deploy/scripts/phase7-doc-admin-smoke.sh    # 公文/知识库/会议室排他约束 45 断言
+bash deploy/scripts/phase8-report-audit-smoke.sh # 报表/审计/跑批/文件/渗透   40 断言
 ```
+
+`phase4` 与 `phase4b` 是**两件事**：前者用本地流程替身验 OA 自己的逻辑（不依赖外部进程），
+后者接真 workflow-platform 验**集成**。两个都要绿。
 
 > 本机 Testcontainers 跑不起来（见 `docs/RUNBOOK.md`），所以集成验证一律走
 > "bash 冒烟脚本打运行中的 compose 容器"。
