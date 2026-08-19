@@ -34,6 +34,91 @@ public class IamAdminController {
         this.grantService = grantService;
     }
 
+    /**
+     * 以<b>他人视角</b>预览：目标用户能看到哪些菜单、持有哪些权限点、数据范围多宽。
+     *
+     * <p>★ 权限沙盘（FINAL_PLAN §16）右栏"该员工看到的菜单 + 能调的接口"就靠它。
+     * 在此之前唯一的办法是 DEV 模式下带 {@code X-OA-User: 目标用户} 去调
+     * {@code /me/permissions} —— 那在 JWT 模式下根本不通，
+     * 意味着沙盘一上生产就失效。预览别人的权限本身是管理动作，
+     * 就该是一个显式的、要 {@code oa:iam:admin} 的接口，而不是靠伪造身份。
+     *
+     * <p>返回的是<b>重算真值</b>而不是缓存：沙盘的用途正是排查"缓存对不对"，
+     * 拿缓存去解释缓存等于什么都没说。
+     */
+    @GetMapping("/preview")
+    @RequiresPerm("oa:iam:admin")
+    public Result<Map<String, Object>> preview(@RequestParam String userId) {
+        PermissionSnapshot truth = builder.build(userId);
+        List<String> codes = new ArrayList<>(truth.permCodes());
+        Collections.sort(codes);
+
+        // 菜单：从权限点目录取 MENU 类型并按 route/icon/sort_order 组装。
+        // 与 /me/permissions 用同一份目录，避免"我看到的菜单"和"预览别人看到的菜单"两套逻辑分叉。
+        List<Map<String, Object>> menus = new ArrayList<>();
+        for (com.lrj.oa.iam.domain.Permission p : catalog.all()) {
+            if (!"MENU".equals(p.getType())) continue;
+            if (!truth.permCodes().contains(p.getCode())) continue;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("code", p.getCode());
+            m.put("name", p.getName());
+            m.put("route", p.getRoute());
+            m.put("icon", p.getIcon());
+            m.put("sortOrder", p.getSortOrder() == null ? 0 : p.getSortOrder());
+            menus.add(m);
+        }
+        menus.sort(java.util.Comparator.comparingInt(m -> (Integer) m.get("sortOrder")));
+
+        Map<String, String> moduleScope = new LinkedHashMap<>();
+        truth.moduleScope().forEach((k, v) -> moduleScope.put(k, v.type().name()));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("userId", userId);
+        out.put("permCodes", codes);
+        out.put("permCount", codes.size());
+        out.put("menus", menus);
+        out.put("dataScope", truth.mergedScope().type().name());
+        out.put("scopePrefixes", truth.mergedScope().pathPrefixes());
+        out.put("moduleScope", moduleScope);
+        out.put("delegators", truth.delegators());
+        return Result.ok(out);
+    }
+
+    /**
+     * 来源链：这个人的这条权限<b>是怎么来的</b>。
+     *
+     * <p>★ FINAL_PLAN §16 要求沙盘中栏回答"来自哪个部门继承 / 哪个角色 / 哪条临时授权"。
+     * {@code /explain} 只回答"是不是"与"缓存对不对"，回答不了"为什么"。
+     *
+     * <p>这件事<b>必须由后端做</b>：继承规则（角色继承闭包 + 组织授权按 org_path 前缀
+     * 向下继承 + 任职关系）全在后端。让前端多调几次 {@code /iam/grants} 自己拼，
+     * 等于把判权语义在前端抄一遍 —— 两份实现迟早分叉，而分叉的那天，
+     * 沙盘会理直气壮地解释错。
+     */
+    @GetMapping("/why")
+    @RequiresPerm("oa:iam:admin")
+    public Result<Map<String, Object>> why(@RequestParam String userId,
+                                           @RequestParam String permCode) {
+        int permId = catalog.idOf(permCode);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("userId", userId);
+        out.put("permCode", permCode);
+        out.put("known", permId >= 0);
+        if (permId < 0) {
+            // 目录里没有的 code 一律判拒（fail-closed）。这也是打错字的表现，
+            // 直接说清楚，别让人对着一个恒为 false 的判定猜半天。
+            out.put("allowed", false);
+            out.put("sources", List.of());
+            out.put("reason", "权限点目录中不存在该 code —— 目录里没有的一律判为拒绝");
+            return Result.ok(out);
+        }
+        PermissionSnapshot truth = builder.build(userId);
+        out.put("allowed", truth.has(permId));
+        out.put("currentlyElevated", truth.isElevated(permId));
+        out.put("sources", grantService.explainSources(userId, permCode));
+        return Result.ok(out);
+    }
+
     @GetMapping("/cache-stats")
     @RequiresPerm("oa:iam:admin")
     public Result<Map<String, Object>> cacheStats() {

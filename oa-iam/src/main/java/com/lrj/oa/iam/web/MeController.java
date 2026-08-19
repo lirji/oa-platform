@@ -42,15 +42,21 @@ public class MeController {
                                 Long primaryOrgId, String primaryOrgPath,
                                 long version, List<String> permCodes, List<MenuNode> menus,
                                 String dataScope, List<String> scopePrefixes,
-                                List<String> delegators, List<String> elevatedCodes) {}
+                                List<String> delegators, List<String> elevatedCodes,
+                                /** 每模块独立的数据范围。快照里一直有，之前没下发，
+                                 *  前端就无法按模块提示"你在这个模块能看到多宽"。 */
+                                Map<String, String> moduleScope) {}
 
     @GetMapping("/permissions")
     @PublicApi(reason = "只返回【调用者自己】的权限清单，不含他人数据；未认证时返回空清单")
     public Result<MyPermissions> myPermissions() {
         UserContext ctx = UserContextHolder.peek();
         if (ctx == null) {
+            // ★ 未认证返回【空清单而不是 401】是刻意的（本接口 @PublicApi，登录页也要能调）。
+            //   但前端必须判 userId == null 才知道"这是未认证"，否则会把它当成
+            //   "我被撤销了所有权限"，表现为整站菜单清空却不跳登录。
             return Result.ok(new MyPermissions(null, null, null, null, null, 0,
-                    List.of(), List.of(), "NONE", List.of(), List.of(), List.of()));
+                    List.of(), List.of(), "NONE", List.of(), List.of(), List.of(), Map.of()));
         }
         PermissionSnapshot snap = engine.snapshot(ctx.userId());
 
@@ -72,7 +78,8 @@ public class MeController {
                 snap.mergedScope().type().name(),
                 snap.mergedScope().pathPrefixes(),
                 new ArrayList<>(snap.delegators()),
-                elevated));
+                elevated,
+                moduleScopeOf(snap)));
     }
 
     /** 按权限点目录里的 MENU 类型过滤出可见菜单树。 */
@@ -96,5 +103,12 @@ public class MeController {
         }
         out.sort(Comparator.comparingInt(MenuNode::sortOrder));
         return out;
+    }
+
+    /** 每模块的数据范围。沙盘与"你在这个模块能看到多宽"的提示都要它。 */
+    private static Map<String, String> moduleScopeOf(PermissionSnapshot snap) {
+        Map<String, String> m = new LinkedHashMap<>();
+        snap.moduleScope().forEach((k, v) -> m.put(k, v.type().name()));
+        return m;
     }
 }

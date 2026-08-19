@@ -55,4 +55,9 @@ public class DirectoryEntryView {
     public void setLeader(Boolean v) { this.leader = v; }
     public String getMobile() { return mobile; }
     public void setMobile(String v) { this.mobile = v; }
+
+    /** 增量同步水位线。前端据此推进本地 since。 */
+    private Long syncSeq;
+    public Long getSyncSeq() { return syncSeq; }
+    public void setSyncSeq(Long v) { this.syncSeq = v; }
 }

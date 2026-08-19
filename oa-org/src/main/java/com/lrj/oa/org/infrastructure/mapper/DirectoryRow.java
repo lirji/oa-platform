@@ -52,4 +52,9 @@ public class DirectoryRow {
     public void setLeader(Boolean v) { this.leader = v; }
     public byte[] getMobileEnc() { return mobileEnc; }
     public void setMobileEnc(byte[] v) { this.mobileEnc = v; }
+
+    /** 增量同步水位线。客户端存下最大值作为下次的 since。 */
+    private Long syncSeq;
+    public Long getSyncSeq() { return syncSeq; }
+    public void setSyncSeq(Long v) { this.syncSeq = v; }
 }

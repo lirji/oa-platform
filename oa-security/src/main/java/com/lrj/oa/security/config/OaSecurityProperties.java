@@ -30,6 +30,20 @@ public class OaSecurityProperties {
             "/swagger-ui.html"
     ));
 
+    /**
+     * 允许跨源的来源列表。默认只放本机前端的 dev / prod 端口。
+     * 生产要加真实域名；<b>永远不要写 {@code *}</b> —— allowCredentials=true 时浏览器会拒绝，
+     * 且通配等于任何网页都能带着用户凭据打我们的接口。
+     */
+    private List<String> allowedOrigins = new java.util.ArrayList<>(List.of(
+            "http://localhost:5473", "http://127.0.0.1:5473",   // oa-console dev
+            "http://localhost:8404", "http://127.0.0.1:8404",   // oa-console prod
+            "http://localhost:5474", "http://127.0.0.1:5474",   // oa-mobile dev
+            "http://localhost:8405", "http://127.0.0.1:8405"));  // oa-mobile prod
+
+    public List<String> getAllowedOrigins() { return allowedOrigins; }
+    public void setAllowedOrigins(List<String> v) { this.allowedOrigins = v; }
+
     public enum Mode { DEV, JWT }
 
     public Mode getMode() { return mode; }

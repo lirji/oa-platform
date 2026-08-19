@@ -45,11 +45,15 @@ public class GrantService {
     private final InvalidationBus bus;
     private final ObjectMapper json;
     private final int maxElevationHours;
+    /** 只给来源链解释用。判权热路径一行 SQL 都不许有（P99 = 1.25μs 就是这么来的）。 */
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public GrantService(GrantMapper grantMapper, RoleMapper roleMapper, DelegationMapper delegationMapper,
                         PermVersionMapper versionMapper, PermissionEngine engine,
                         ObjectProvider<InvalidationBus> busProvider, ObjectMapper json,
+                        org.springframework.jdbc.core.JdbcTemplate jdbc,
                         @Value("${oa.iam.elevation.max-hours:8}") int maxElevationHours) {
+        this.jdbc = jdbc;
         this.grantMapper = grantMapper;
         this.roleMapper = roleMapper;
         this.delegationMapper = delegationMapper;
@@ -269,5 +273,84 @@ public class GrantService {
     private static String currentUser() {
         var ctx = UserContextHolder.peek();
         return ctx == null ? "system" : ctx.userId();
+    }
+
+    /**
+     * 解释「这条权限是怎么来的」—— 返回所有能推出该权限点的授权来源。
+     *
+     * <p>★ 权限沙盘中栏要回答的正是这个（FINAL_PLAN §16）。
+     * 放在后端而不是让前端多调几次 {@code /iam/grants} 自己拼：
+     * 继承规则（角色继承闭包 + 组织授权按 org_path 前缀向下继承 + 任职关系）全在后端，
+     * 前端拼装等于把判权语义抄一遍 —— 两份实现迟早分叉，
+     * 而分叉的那天，沙盘会理直气壮地解释错。
+     *
+     * <p>一条权限可能有<b>多个</b>来源（本人被直接授权 + 所在部门也被授权），
+     * 所以返回列表而不是单条：撤销其中一条不一定就失去权限，这件事必须让人看见。
+     */
+    public java.util.List<java.util.Map<String, Object>> explainSources(String userId, String permCode) {
+        // 一次查完：直接授权（USER）+ 组织授权（ORG_UNIT，按 org_path 前缀继承）+ 岗位授权。
+        // 角色继承走 role_inherit 闭包表，所以"父角色持有该权限"也会被算进来。
+        return jdbc.queryForList("""
+                WITH my_orgs AS (
+                    SELECT o.id AS org_id, o.path AS org_path, o.name AS org_name
+                      FROM oa_org.employee e
+                      JOIN oa_org.employee_org_assignment a
+                        ON a.employee_id = e.id AND a.valid_to IS NULL
+                      JOIN oa_org.org_unit o ON o.id = a.org_unit_id
+                     WHERE e.user_id = ?
+                ),
+                my_positions AS (
+                    SELECT a.position_id
+                      FROM oa_org.employee e
+                      JOIN oa_org.employee_org_assignment a
+                        ON a.employee_id = e.id AND a.valid_to IS NULL
+                     WHERE e.user_id = ? AND a.position_id IS NOT NULL
+                )
+                SELECT g.id                AS grant_id,
+                       g.subject_type      AS subject_type,
+                       g.subject_id        AS subject_id,
+                       r.code              AS role_code,
+                       r.name              AS role_name,
+                       ri.distance         AS role_distance,
+                       g.grant_type        AS grant_type,
+                       g.scope_type        AS scope_type,
+                       g.include_descendants AS include_descendants,
+                       g.valid_to          AS valid_to,
+                       g.reason            AS reason,
+                       g.granted_by        AS granted_by,
+                       g.granted_at        AS granted_at,
+                       CASE
+                         WHEN g.subject_type = 'USER'      THEN '本人被直接授权'
+                         WHEN g.subject_type = 'ORG_UNIT'  THEN '所在组织「' || coalesce(og.name, g.subject_id) || '」被授权'
+                                                                || CASE WHEN g.include_descendants THEN '（含下级，按 org_path 前缀继承）' ELSE '' END
+                         WHEN g.subject_type = 'POSITION'  THEN '所任岗位被授权'
+                         ELSE g.subject_type
+                       END AS via,
+                       CASE WHEN ri.distance = 0 THEN '该角色直接包含此权限'
+                            ELSE '经角色继承（向上 ' || ri.distance || ' 层）获得' END AS role_path
+                  FROM oa_iam.grant_record g
+                  JOIN oa_iam.role_inherit ri ON ri.ancestor_role_id = g.role_id
+                  JOIN oa_iam.role_permission rp ON rp.role_id = ri.descendant_role_id
+                  JOIN oa_iam.permission p ON p.id = rp.permission_id AND p.code = ?
+                  JOIN oa_iam.role r ON r.id = g.role_id
+                  -- ★ 把 og.id 转成 text 去比，而不是把 subject_id 转成 bigint。
+                  --   subject_id 对 USER 授权是 Casdoor sub（UUID 串），转 bigint 会炸；
+                  --   加 `subject_id ~ '^[0-9]+$'` 守卫也不够 —— PG 不保证 AND 的短路顺序，
+                  --   优化器仍可能先算那个转换。反过来转就没有任何一行会失败。
+                  LEFT JOIN oa_org.org_unit og
+                         ON g.subject_type = 'ORG_UNIT' AND og.id::text = g.subject_id
+                 WHERE g.revoked_at IS NULL
+                   AND (g.valid_to IS NULL OR g.valid_to > now())
+                   AND (
+                        (g.subject_type = 'USER' AND g.subject_id = ?)
+                     OR (g.subject_type = 'ORG_UNIT' AND EXISTS (
+                            SELECT 1 FROM my_orgs m
+                             WHERE (g.include_descendants AND m.org_path LIKE og.path || '%')
+                                OR (NOT g.include_descendants AND m.org_id = og.id)))
+                     OR (g.subject_type = 'POSITION' AND EXISTS (
+                            SELECT 1 FROM my_positions mp WHERE mp.position_id::text = g.subject_id))
+                   )
+                 ORDER BY g.id
+                """, userId, userId, permCode, userId);
     }
 }

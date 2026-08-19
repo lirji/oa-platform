@@ -59,6 +59,44 @@ public class DirectoryService {
         v.setLeader(Boolean.TRUE.equals(r.getLeader()));
         // 这里只负责解密；给不给明文由序列化层按 @Sensitive 决定，权限判断不在业务层做
         if (r.getMobileEnc() != null) v.setMobile(crypto.decrypt(r.getMobileEnc()));
+        v.setSyncSeq(r.getSyncSeq());
         return v;
+    }
+
+    /** 游标分页。带数据权限 —— 分页绝不能成为绕过它的口子。 */
+    @DataScope(alias = "t", orgColumn = "org_id", pathColumn = "org_path",
+               userColumn = "user_id", module = "org")
+    public List<DirectoryEntryView> page(Long cursor, String keyword, int size) {
+        List<DirectoryRow> rows = directoryMapper.page(cursor, keyword, Math.min(Math.max(size, 1), 500));
+        List<DirectoryEntryView> out = new ArrayList<>(rows.size());
+        for (DirectoryRow r : rows) out.add(toView(r));
+        return out;
+    }
+
+    /** 增量：自 since 之后变化的行（带数据权限）。 */
+    @DataScope(alias = "t", orgColumn = "org_id", pathColumn = "org_path",
+               userColumn = "user_id", module = "org")
+    public List<DirectoryEntryView> changedSince(long since, int size) {
+        List<DirectoryRow> rows = directoryMapper.changedSince(since, Math.min(Math.max(size, 1), 500));
+        List<DirectoryEntryView> out = new ArrayList<>(rows.size());
+        for (DirectoryRow r : rows) out.add(toView(r));
+        return out;
+    }
+
+    /**
+     * 墓碑：客户端应删除的 employeeId。
+     *
+     * <p>★ 刻意<b>不带</b> {@code @DataScope}：告诉客户端"删掉这个 id"不泄露任何信息
+     * （它本来就在客户端本地）。反过来若墓碑也被过滤，一个人调岗出我的可见范围时
+     * 我收不到墓碑，本地就永远留着他 —— <b>那才是真正的泄露</b>。
+     */
+    public List<Long> tombstonesSince(long since, int size) {
+        return directoryMapper.tombstonesSince(since, Math.min(Math.max(size, 1), 1000)).stream()
+                .map(m -> ((Number) m.get("employee_id")).longValue())
+                .toList();
+    }
+
+    public long currentWatermark() {
+        return directoryMapper.currentWatermark();
     }
 }
