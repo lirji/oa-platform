@@ -146,13 +146,33 @@ services:
       OA_REDIS_HOST: redis
       OA_REDIS_PORT: 6379
       OA_KAFKA: kafka:9092
+      OA_PG_DB: ${OA_PG_DB:-oa}
+      OA_PG_USER: ${OA_PG_USER:-oa}
+      OA_PG_PASSWORD: ${OA_PG_PASSWORD:-oa_dev_pwd}
+      # ⚠️ 通知服务内嵌判权引擎，敏感字段解密要用同一把密钥；不注入就是仓库里写死的开发默认值
+      OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
+      OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_NOTIFY_WS_MAX: ${OA_NOTIFY_WS_MAX:-20000}
+      # 外部渠道默认全关：打开一个没配好凭据的渠道，每条通知都会等一次超时
+      OA_NOTIFY_EMAIL_ENABLED: ${OA_NOTIFY_EMAIL_ENABLED:-false}
+      OA_NOTIFY_SMS_ENABLED: ${OA_NOTIFY_SMS_ENABLED:-false}
+      OA_NOTIFY_WECOM_ENABLED: ${OA_NOTIFY_WECOM_ENABLED:-false}
+      OA_NOTIFY_FEISHU_ENABLED: ${OA_NOTIFY_FEISHU_ENABLED:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8401/api/v1/notify/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
 
   oa-file:
     image: oa-platform/oa-file-service:${OA_IMAGE_TAG:-local}
     container_name: oa-file
     profiles: ["apps"]
     depends_on:
-      minio: { condition: service_started }
+      minio:    { condition: service_started }
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
     ports:
       - "${OA_FILE_PORT:-8402}:8402"
     environment:
@@ -160,6 +180,27 @@ services:
       OA_MINIO_ENDPOINT: http://minio:9000
       OA_MINIO_ROOT_USER: ${OA_MINIO_ROOT_USER:-oaminio}
       OA_MINIO_ROOT_PASSWORD: ${OA_MINIO_ROOT_PASSWORD:-oaminio_dev_pwd}
+      OA_MINIO_BUCKET: ${OA_MINIO_BUCKET:-oa-files}
+      # 文件服务也有自己的元数据表与内嵌判权引擎 —— 没有 PG 它连启动都不该算成功
+      OA_PG_HOST: postgres
+      OA_PG_PORT: 5432
+      OA_PG_DB: ${OA_PG_DB:-oa}
+      OA_PG_USER: ${OA_PG_USER:-oa}
+      OA_PG_PASSWORD: ${OA_PG_PASSWORD:-oa_dev_pwd}
+      OA_REDIS_HOST: redis
+      OA_REDIS_PORT: 6379
+      OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
+      OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_FILE_MAX: ${OA_FILE_MAX:-50MB}
+      OA_FILE_MAX_BYTES: ${OA_FILE_MAX_BYTES:-52428800}
+      # 预签名 URL 直连对象存储、绕过应用层判权 —— 时效即泄露窗口，别调大
+      OA_FILE_PRESIGN_SECONDS: ${OA_FILE_PRESIGN_SECONDS:-300}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8402/api/v1/file/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
 
   oa-job:
     image: oa-platform/oa-job-service:${OA_IMAGE_TAG:-local}
@@ -176,6 +217,18 @@ services:
       OA_REDIS_HOST: redis
       OA_REDIS_PORT: 6379
       OA_KAFKA: kafka:9092
+      OA_PG_DB: ${OA_PG_DB:-oa}
+      OA_PG_USER: ${OA_PG_USER:-oa}
+      OA_PG_PASSWORD: ${OA_PG_PASSWORD:-oa_dev_pwd}
+      OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
+      OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_JOB_SHARDS: ${OA_JOB_SHARDS:-16}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8403/api/v1/job/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
 
 volumes:
   oa-pg-data:
