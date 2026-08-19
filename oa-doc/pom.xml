@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.lrj.oa</groupId>
+    <artifactId>oa-platform</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>oa-doc</artifactId>
+  <name>oa-doc</name>
+  <description>文档域：公文流转 + 知识库（知识库可选挂 auth-platform SpiceDB）</description>
+  <dependencies>
+    <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-common</artifactId></dependency>
+    <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-protocol</artifactId></dependency>
+    <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId></dependency>
+    <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-org</artifactId></dependency>
+    <dependency><groupId>com.baomidou</groupId><artifactId>mybatis-plus-spring-boot3-starter</artifactId></dependency>
+    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
+    <dependency>
+      <groupId>com.lrj.authz</groupId><artifactId>auth-platform-sdk</artifactId>
+      <optional>true</optional>
+    </dependency>
+  </dependencies>
+</project>

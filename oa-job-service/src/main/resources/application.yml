@@ -1,0 +1,32 @@
+server:
+  port: ${OA_JOB_PORT:8403}
+  shutdown: graceful
+
+spring:
+  application:
+    name: oa-job-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:postgresql://${OA_PG_HOST:localhost}:${OA_PG_PORT:35432}/${OA_PG_DB:oa}
+    username: ${OA_PG_USER:oa}
+    password: ${OA_PG_PASSWORD:oa_dev_pwd}
+  data:
+    redis:
+      host: ${OA_REDIS_HOST:localhost}
+      port: ${OA_REDIS_PORT:36379}
+  kafka:
+    bootstrap-servers: ${OA_KAFKA:localhost:39092}
+  flyway:
+    enabled: false          # 迁移由 oa-app 统一执行，独立服务只读同一套 schema
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+oa:
+  security:
+    mode: DEV               # Phase 2 接入 Casdoor 后改 JWT

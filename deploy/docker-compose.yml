@@ -1,0 +1,95 @@
+# OA Platform 本地基建。
+# 纪律（auth/risk/workflow 三个项目都踩过）：
+#   ① 独立 project name，避免与其它 compose 互相 kill；
+#   ② 端口全部变量化；
+#   ③ 起之前先 `docker compose -p oa-platform down --remove-orphans` 清 docker-proxy 残留。
+# 端口避让：9092 属 langchain4j / 29092 属 workflow / 15432 属 auth / 25432 属 workflow —— 一律不动。
+name: oa-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oa-postgres
+    ports:
+      - "${OA_PG_HOST_PORT:-35432}:5432"
+    environment:
+      POSTGRES_DB: ${OA_PG_DB:-oa}
+      POSTGRES_USER: ${OA_PG_USER:-oa}
+      POSTGRES_PASSWORD: ${OA_PG_PASSWORD:-oa_dev_pwd}
+      # 万人级：组织树/权限快照重算是短事务高频，日志别刷屏
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+    volumes:
+      - oa-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${OA_PG_USER:-oa} -d ${OA_PG_DB:-oa}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: oa-redis
+    ports:
+      - "${OA_REDIS_HOST_PORT:-36379}:6379"
+    # 权限快照 L2 缓存 + Pub/Sub 失效广播 + 打卡幂等键；正确性不依赖它（丢了回源重算）
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.8.0          # KRaft 单节点；bitnami/kafka 标签已被撤，用官方 arm64 镜像
+    container_name: oa-kafka
+    ports:
+      - "${OA_KAFKA_HOST_PORT:-39092}:39092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # 双 listener：容器内其它服务用 kafka:9092，宿主机用 localhost:39092
+      # ★ 宿主端口必须与容器内 PLAINTEXT_HOST 端口同号，否则 advertised 地址对不上（workflow 项目踩过）
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:39092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:39092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: oa-minio
+    ports:
+      - "${OA_MINIO_API_PORT:-39000}:9000"
+      - "${OA_MINIO_CONSOLE_PORT:-39001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${OA_MINIO_ROOT_USER:-oaminio}
+      MINIO_ROOT_PASSWORD: ${OA_MINIO_ROOT_PASSWORD:-oaminio_dev_pwd}
+    command: server /data --console-address ":9001"
+    volumes:
+      - oa-minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  oa-pg-data:
+  oa-minio-data:

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.lrj.oa</groupId>
+  <artifactId>oa-dependencies</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>oa-dependencies</name>
+  <description>OA 平台统一依赖版本（BOM）。第三方版本只在这里定义一次。</description>
+
+  <properties>
+    <mybatis-plus.version>3.5.5</mybatis-plus.version>
+    <roaringbitmap.version>1.3.0</roaringbitmap.version>
+    <caffeine.version>3.1.8</caffeine.version>
+    <archunit.version>1.3.0</archunit.version>
+    <springdoc.version>2.6.0</springdoc.version>
+    <workflow-platform.version>0.1.0-SNAPSHOT</workflow-platform.version>
+    <auth-platform.version>0.1.0-SNAPSHOT</auth-platform.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- ===== 本项目模块 ===== -->
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-common</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-protocol</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-org</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-iam</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-flow</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-attendance</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-doc</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-admin-biz</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-report</artifactId><version>${project.version}</version></dependency>
+
+      <!-- ===== 第三方 ===== -->
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        <version>${mybatis-plus.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.roaringbitmap</groupId>
+        <artifactId>RoaringBitmap</artifactId>
+        <version>${roaringbitmap.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.github.ben-manes.caffeine</groupId>
+        <artifactId>caffeine</artifactId>
+        <version>${caffeine.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
+        <scope>test</scope>
+      </dependency>
+
+      <!-- ===== 复用中台 SDK（装在 system maven 仓库 /Users/liruijun/personal/repository） ===== -->
+      <dependency>
+        <groupId>com.lrj.workflow</groupId>
+        <artifactId>workflow-platform-sdk</artifactId>
+        <version>${workflow-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.lrj.workflow</groupId>
+        <artifactId>workflow-platform-protocol</artifactId>
+        <version>${workflow-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.lrj.authz</groupId>
+        <artifactId>auth-platform-sdk</artifactId>
+        <version>${auth-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.lrj.authz</groupId>
+        <artifactId>auth-platform-protocol</artifactId>
+        <version>${auth-platform.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>

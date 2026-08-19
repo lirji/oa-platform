@@ -1,0 +1,12 @@
+target/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.idea/
+*.iml
+.DS_Store
+logs/
+*.log
+deploy/.env
+node_modules/
+dist/
+.vite/

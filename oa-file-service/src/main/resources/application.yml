@@ -1,0 +1,20 @@
+server:
+  port: ${OA_FILE_PORT:8402}
+  shutdown: graceful
+
+spring:
+  application:
+    name: oa-file-service
+  threads:
+    virtual:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+oa:
+  security:
+    mode: DEV               # Phase 2 接入 Casdoor 后改 JWT

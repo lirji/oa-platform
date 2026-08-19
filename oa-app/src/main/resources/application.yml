@@ -1,0 +1,61 @@
+server:
+  port: ${OA_APP_PORT:8400}
+  shutdown: graceful
+
+spring:
+  application:
+    name: oa-app
+  threads:
+    virtual:
+      enabled: true          # JDK21 虚拟线程；Phase 0 硬门禁 A 已实测 pinning，结论见 IMPLEMENTATION_PROGRESS.md
+  datasource:
+    url: jdbc:postgresql://${OA_PG_HOST:localhost}:${OA_PG_PORT:35432}/${OA_PG_DB:oa}
+    username: ${OA_PG_USER:oa}
+    password: ${OA_PG_PASSWORD:oa_dev_pwd}
+    hikari:
+      # 按 CPU核数×2 + 有效磁盘数 估算，不盲目调大：
+      # 虚拟线程下调大反而更容易把 DB 打满（FINAL_PLAN 9.5）
+      maximum-pool-size: ${OA_DB_POOL_MAX:20}
+      minimum-idle: 5
+      pool-name: oa-hikari
+  data:
+    redis:
+      host: ${OA_REDIS_HOST:localhost}
+      port: ${OA_REDIS_PORT:36379}
+  kafka:
+    bootstrap-servers: ${OA_KAFKA:localhost:39092}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+oa:
+  version: 0.1.0-SNAPSHOT
+  security:
+    mode: DEV              # Phase 2 接入 Casdoor 后改 JWT（改完 /api/** 无 token 一律 401）
+  iam:
+    abac:
+      enabled: false           # ABAC 条件引擎，Phase 4 报销场景才开
+    shadow-verify:
+      enabled: true            # 判权影子校验，上线 2 周指标为 0 后可关（R2 兜底）
+      sample-rate: 0.01
+  authz:
+    spicedb:
+      enabled: false           # 知识库子域挂 auth-platform SpiceDB，Phase 7 才开
+  workflow:
+    enabled: false             # workflow-platform 集成，Phase 4 才开
