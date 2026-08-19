@@ -73,6 +73,14 @@ JDK21 虚拟线程在 `synchronized` 里阻塞会 pin 载体线程。Phase 0 的
     唯独 DENIED 一条也没有，而"谁在试探哪个接口"恰恰是审计最该回答的问题。
 14. **JIT 提权默认活 1 小时，会跨两次冒烟继续有效**，让"未提权应被拒"假失败。
     冒烟开头要先走 API 撤掉遗留的 TEMPORARY 授权（走 API 才会 bump epoch）。
+15. **PG 不保证 `AND` 的短路顺序**：`WHERE subject_type='ORG_UNIT' AND subject_id::bigint = x`
+    在库里存在 USER 授权（subject_id 是 UUID 串）时会炸，加 `~ '^[0-9]+$'` 守卫也**不够**，
+    优化器仍可能先算那个转换。要么反过来转（`og.id::text = subject_id`），要么用 CASE。
+    这类错误只在数据恰好包含另一种形态时才出现，干净的库上测不出来。
+16. **数据权限不足不抛错**：`@DataScope` 算不出范围时 SQL 生成 `1=0`，接口返回
+    **200 + 空数组**（3005 实际上从未被抛出过）。与"真的没数据"完全无法区分 ——
+    前端必须结合 `/me/permissions` 的 `dataScope` 与 `scopePrefixes` 显式提示，
+    否则用户会以为自己看全了。
 
 ## 本机现实
 - **Testcontainers 跑不起来** → 集成验证一律写成 bash 冒烟脚本打运行中的 compose 容器。
@@ -95,7 +103,25 @@ deploy/scripts/phase6-notify-smoke.sh       通知 + 万人公告 + 位图回执
 deploy/scripts/phase7-doc-admin-smoke.sh    公文/知识库/会议室排他约束   45 断言
 deploy/scripts/phase8-report-audit-smoke.sh 报表/审计/跑批/文件/渗透     40 断言
 deploy/scripts/WsProbe.java                 长连探针（curl 不会说 WebSocket）
+deploy/scripts/PunchLoadTest.java           早高峰打卡压测（单文件，无需构建）
+deploy/scripts/FullChainLoadTest.java       全链路读路径压测（同上，替代未装的 k6）
+deploy/scripts/gen-api-doc.py               从源码重新生成 docs/API.md（别手写它）
 ```
+
+## 前端契约（Phase 3 开工前已补齐的后端能力）
+
+- **权限版本**：每个响应带 `X-OA-Perm-Version` 头。前端比对它就知道权限变了，零额外请求。
+- **菜单**：`/me/permissions` 的 `menus` 已带 `route`/`icon`/`sortOrder`（V13），
+  **前端不要再维护第二份菜单定义** —— 两份迟早漂移。
+- **角色与权限点目录**：`GET /iam/roles`、`/iam/roles/mine`、`/iam/permissions/catalog`
+  （后者的 `enabled=false` 表示"目录中已定义但尚无接口实现"，别为它渲染入口）。
+- **权限沙盘**：`GET /iam/admin/preview?userId=`（他人视角）、
+  `GET /iam/admin/why?userId=&permCode=`（来源链：哪个部门继承/哪个角色/哪条临时授权）。
+  **来源链必须由后端算** —— 继承规则全在后端，前端拼等于把判权语义抄一遍，分叉那天沙盘会解释错。
+- **通讯录**：`GET /org/directory/page?cursor=`（游标分页）、
+  `GET /org/directory/delta?since=`（含 `deletions` 墓碑与 `fullResync` 逃生舱）。
+  ⚠️ IndexedDB 缓存必须按 `(userId, permVersion)` 分区、敏感字段不落盘 ——
+  通讯录是 per-viewer 的（`@DataScope` + `@Sensitive`）。
 改完代码至少跑相关阶段的那个。压测的延迟数字要看并发（Little 定律），
 高并发下的 P99 量的是客户端排队，不是服务端能力。
 
