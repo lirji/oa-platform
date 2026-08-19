@@ -2,9 +2,14 @@ package com.lrj.oa.common.config;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
+import com.baomidou.mybatisplus.extension.plugins.handler.MultiDataPermissionHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.BlockAttackInnerInterceptor;
+import com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -22,10 +27,22 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnClass(MybatisPlusInterceptor.class)
 public class MybatisPlusConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(MybatisPlusConfig.class);
+
     @Bean
     @ConditionalOnMissingBean
-    public MybatisPlusInterceptor mybatisPlusInterceptor() {
+    public MybatisPlusInterceptor mybatisPlusInterceptor(
+            ObjectProvider<MultiDataPermissionHandler> dataPermissionHandler) {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+
+        // ★ 数据权限必须排在分页【之前】。分页拦截器会改写出 count 语句，
+        // 排在它后面的话 count 就绕过了数据权限 —— 结果是"列表被过滤了、总数却没被过滤"，
+        // 一个既泄露信息又让前端分页错乱的经典越权。
+        MultiDataPermissionHandler handler = dataPermissionHandler.getIfAvailable();
+        if (handler != null) {
+            interceptor.addInnerInterceptor(new DataPermissionInterceptor(handler));
+            log.info("数据权限拦截器已装配: {}", handler.getClass().getSimpleName());
+        }
 
         // 乐观锁：org_unit / employee / approval_instance 等带 version 列的实体
         interceptor.addInnerInterceptor(new OptimisticLockerInnerInterceptor());

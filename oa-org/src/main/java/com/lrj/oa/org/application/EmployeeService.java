@@ -4,12 +4,14 @@ import com.lrj.oa.common.api.ResultCode;
 import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.common.crypto.SensitiveCrypto;
 import com.lrj.oa.common.exception.BusinessException;
+import com.lrj.oa.org.api.event.EmployeeAssignmentChangedEvent;
 import com.lrj.oa.org.application.command.OrgCommands;
 import com.lrj.oa.org.domain.*;
 import com.lrj.oa.org.infrastructure.mapper.*;
 import com.lrj.oa.security.context.UserContextHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,15 +31,17 @@ public class EmployeeService {
     private final ReportingLineMapper reportingLineMapper;
     private final OrgUnitMapper orgUnitMapper;
     private final SensitiveCrypto crypto;
+    private final ApplicationEventPublisher events;
 
     public EmployeeService(EmployeeMapper employeeMapper, AssignmentMapper assignmentMapper,
                            ReportingLineMapper reportingLineMapper, OrgUnitMapper orgUnitMapper,
-                           SensitiveCrypto crypto) {
+                           SensitiveCrypto crypto, ApplicationEventPublisher events) {
         this.employeeMapper = employeeMapper;
         this.assignmentMapper = assignmentMapper;
         this.reportingLineMapper = reportingLineMapper;
         this.orgUnitMapper = orgUnitMapper;
         this.crypto = crypto;
+        this.events = events;
     }
 
     @Transactional
@@ -129,6 +133,8 @@ public class EmployeeService {
 
         openAssignment(employeeId, cmd.targetOrgId(), cmd.targetPositionId(),
                 AssignmentType.PRIMARY, Boolean.TRUE.equals(cmd.asLeader()), effective);
+        // 数据范围锚定在本人所在组织上，调岗后必须让权限快照跟着失效
+        publishAssignmentChanged(employeeId, "transfer");
         log.info("员工 {} 调岗至组织 {} 生效日 {}（{}）", employeeId, cmd.targetOrgId(), effective, cmd.reason());
     }
 
@@ -149,9 +155,11 @@ public class EmployeeService {
         if (orgUnitMapper.selectById(cmd.orgUnitId()) == null) {
             throw BusinessException.of(ResultCode.ORG_NOT_FOUND, "组织不存在: " + cmd.orgUnitId());
         }
-        return openAssignment(employeeId, cmd.orgUnitId(), cmd.positionId(), type,
+        Long id = openAssignment(employeeId, cmd.orgUnitId(), cmd.positionId(), type,
                 Boolean.TRUE.equals(cmd.asLeader()),
                 cmd.validFrom() == null ? LocalDate.now() : cmd.validFrom());
+        publishAssignmentChanged(employeeId, "addAssignment");
+        return id;
     }
 
     @Transactional
@@ -164,6 +172,7 @@ public class EmployeeService {
             throw BusinessException.of(ResultCode.CONFLICT, "不能直接关闭主岗，请走调岗或离职");
         }
         assignmentMapper.close(assignmentId, validTo == null ? LocalDate.now() : validTo);
+        publishAssignmentChanged(a.getEmployeeId(), "closeAssignment");
     }
 
     @Transactional
@@ -217,7 +226,9 @@ public class EmployeeService {
         e.setUpdatedBy(currentUser());
         e.setUpdatedAt(OffsetDateTime.now());
         employeeMapper.updateById(e);
-        log.info("员工 {} 离职，生效日 {}", employeeId, day);
+        // 离职是收权动作：连带撤销该账号的全部授权（oa-iam 侧监听处理）
+        events.publishEvent(EmployeeAssignmentChangedEvent.left(e.getUserId()));
+        log.info("员工 {} 离职，生效日 {}，已触发授权回收", employeeId, day);
     }
 
     // ───────────────────────────────────────────── 内部
@@ -242,6 +253,11 @@ public class EmployeeService {
                     "该员工已有生效中的主岗，请先调岗关闭旧主岗");
         }
         return a.getId();
+    }
+
+    private void publishAssignmentChanged(Long employeeId, String reason) {
+        Employee e = employeeMapper.selectById(employeeId);
+        if (e != null) events.publishEvent(EmployeeAssignmentChangedEvent.of(e.getUserId(), reason));
     }
 
     private Employee requireEmployee(Long id) {

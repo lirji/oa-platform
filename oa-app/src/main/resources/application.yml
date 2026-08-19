@@ -28,6 +28,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # ★ 必须开：我们按【模块】划分迁移版本号区间（V1 app / V2-V9 org / V10-V19 iam / V20+ 其它），
+    # 于是 org 模块后补的 V4 会排在已执行的 V10 之前，被 Flyway 判成 out-of-order 而拒绝启动。
+    # 这是"模块各占号段"这个约定的真实代价，接受它的前提是：
+    # 各模块拥有互不相交的 schema，跨模块迁移之间没有顺序依赖，乱序执行不会产生错误结果。
+    # 若将来出现跨模块的顺序依赖，就该改用时间戳版本号而不是继续开这个开关。
+    out-of-order: true
 
 mybatis-plus:
   configuration:
@@ -56,6 +62,15 @@ oa:
   crypto:
     data-key: ${OA_CRYPTO_DATA_KEY:}          # base64 的 32 字节；不配则用开发默认密钥并告警
   iam:
+    enforce: ${OA_IAM_ENFORCE:true}      # 接口权限校验总开关；关掉等于拆掉唯一的安全边界
+    bootstrap-admin-user-id: ${OA_BOOTSTRAP_ADMIN:}   # 初始管理员，补一条真实 SUPER_ADMIN 授权
+    elevation:
+      max-hours: 8             # JIT 提权时长上限
+    cache:
+      ttl-ms: 300000           # 快照 TTL；实际有效期还会被最近的临时授权到期时刻压低
+      l1-max-size: 20000
+      l2-enabled: true         # Redis 二级缓存（冷启动/被挤出 L1 时用）
+      l2-ttl-seconds: 1800
     abac:
       enabled: false           # ABAC 条件引擎，Phase 4 报销场景才开
     shadow-verify:

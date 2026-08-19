@@ -1,5 +1,7 @@
 package com.lrj.oa.org.infrastructure.cache;
 
+import com.lrj.oa.common.cache.CacheInvalidation;
+import com.lrj.oa.common.cache.InvalidationBus;
 import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.org.api.event.OrgTreeChangedEvent;
 import com.lrj.oa.org.domain.OrgTreeSnapshot;
@@ -8,6 +10,8 @@ import com.lrj.oa.org.infrastructure.mapper.OrgUnitMapper;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -32,11 +36,21 @@ public class OrgTreeCache {
     private static final Logger log = LoggerFactory.getLogger(OrgTreeCache.class);
 
     private final OrgUnitMapper orgUnitMapper;
+    private final InvalidationBus bus;
     private final ReentrantLock rebuildLock = new ReentrantLock();
 
     private volatile OrgTreeSnapshot current = OrgTreeSnapshot.empty();
 
-    public OrgTreeCache(OrgUnitMapper orgUnitMapper) { this.orgUnitMapper = orgUnitMapper; }
+    public OrgTreeCache(OrgUnitMapper orgUnitMapper, ObjectProvider<InvalidationBus> busProvider) {
+        this.orgUnitMapper = orgUnitMapper;
+        this.bus = busProvider.getIfAvailable();
+    }
+
+    /** 别的节点改了组织树 —— 立即重建，不用等轮询。 */
+    @EventListener
+    public void onRemoteInvalidation(CacheInvalidation msg) {
+        if (CacheInvalidation.TYPE_ORG_TREE.equals(msg.type())) rebuild("bus");
+    }
 
     /** 读快照。热路径调用，必须零开销。 */
     public OrgTreeSnapshot snapshot() { return current; }
@@ -56,6 +70,8 @@ public class OrgTreeCache {
     public void onTreeChanged(OrgTreeChangedEvent event) {
         log.debug("组织树变更事件: reason={} orgId={}", event.reason(), event.orgId());
         rebuild("event:" + event.reason());
+        // 本节点已经刷新完，再告诉其它节点。总线挂了也只是退回 5 秒轮询兜底。
+        if (bus != null) bus.publish(CacheInvalidation.TYPE_ORG_TREE, "");
     }
 
     @Scheduled(fixedDelayString = "${oa.org.tree-cache.poll-ms:5000}")
