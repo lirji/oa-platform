@@ -25,6 +25,21 @@
     <dependency><groupId>org.springframework.kafka</groupId><artifactId>spring-kafka</artifactId></dependency>
     <dependency><groupId>org.roaringbitmap</groupId><artifactId>RoaringBitmap</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId></dependency>
+    <!--
+      ★ 判权引擎必须【嵌在每个可部署单元里】。
+      @RequiresPerm 的切面与 fail-closed 守卫都在 oa-iam；只依赖 oa-security 的话，
+      注解能编译、能读、但没有任何人执行它 —— 一个纯装饰的安全注解比没有更危险。
+      改成 HTTP 问 oa-app 也不行：判权在热路径上，契约是零远程调用、P99 < 1ms。
+      oa-iam 的三级缓存本就是"每节点一份 L1 + 共享 L2 + 失效总线"的设计，
+      多一个节点正是它预期的形态。
+    -->
+    <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-iam</artifactId></dependency>
+    <dependency>
+      <groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId>
+      <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+    </dependency>
+    <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
     <plugins>

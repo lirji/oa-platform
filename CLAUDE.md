@@ -35,6 +35,27 @@ JDK21 虚拟线程在 `synchronized` 里阻塞会 pin 载体线程。Phase 0 的
 **只覆盖当时的组件**。Phase 5 就栽过：`Caffeine.get(key, loader)` 底层 `computeIfAbsent`
 持锁执行 loader，加了缓存后吞吐从 555 QPS 塌到 17 QPS。缓存加载一律 **get-then-put**。
 
+## ★ 静默失败清单（这些都不报错，只是悄悄不干活）
+
+1. **`spring-boot:repackage` 增量构建会保留旧的嵌套依赖 jar**。给某个 library 模块加了
+   Flyway 迁移，`mvn install` 整个 reactor 都成功，fat jar 里却还是旧的那份 —— 表现为
+   "迁移文件明明在，就是没执行"，日志只说 `Successfully validated 10 migrations`。
+   **改了任何 `src/main/resources` 下的东西，就得 `clean install`。**
+2. **分区表上的唯一索引必须包含分区键**，于是 `(user_id, dedup_key, created_at)` 这种
+   "唯一"等于"同一时刻才算重复"，完全不去重。跨时间的幂等键必须放在**不分区的小表**上。
+3. **中台 SDK 的 `workflow.client.enabled` 默认 false**，注入 `NoopWorkflowClient`：
+   查询返回空列表、不抛异常。网关会一边宣称 `remote()=true` 一边一条待办也查不到。
+   已在 `RemoteWorkflowGateway` 构造器 fail-fast。
+4. **两套 compose 各有一套 Kafka**（OA 39092 / workflow 29092），投错总线时 `send()`
+   照常返回 offset，消费方永远收不到。按主题前缀分流，见 `WorkflowCommandKafkaConfig`。
+5. **ArchUnit 扫的是 classpath**：oa-app 不依赖三个独立服务，所以权限覆盖检查一度
+   **一个独立服务的 Controller 都没检查过**。规则已抽到 `oa-security` 的 test-jar，
+   规则自身先断言"确实扫到了 `@RestController`"——扫不到东西的检查会永远通过。
+6. **`GlobalExceptionHandler` 只在主应用里**时，独立服务的权限拒绝会变成
+   **HTTP 500 + 空 body**。已移到 `oa-common`，四个可部署单元共用。
+7. **macOS 的 BSD `date` 不支持 `%3N`**，且不报错、原样吐出字母 `N`，
+   于是 `|| fallback` 根本不触发。冒烟里取毫秒一律用 `python3`。
+
 ## 本机现实
 - **Testcontainers 跑不起来** → 集成验证一律写成 bash 冒烟脚本打运行中的 compose 容器。
 - compose 起之前先 `docker compose -p oa-platform down --remove-orphans`（清 docker-proxy 残留）。
@@ -50,7 +71,10 @@ deploy/scripts/phase0-smoke.sh              基建 + 两道硬门禁            
 deploy/scripts/phase1-org-smoke.sh          组织域                      28 断言
 deploy/scripts/phase2-perm-smoke.sh         权限域                      32 断言
 deploy/scripts/phase4-flow-smoke.sh         审批底座                    25 断言
+deploy/scripts/phase4b-remote-smoke.sh      审批·接真中台（集成）        28 断言
 deploy/scripts/phase5-attendance-smoke.sh   考勤 + 早高峰压测           19 断言
+deploy/scripts/phase6-notify-smoke.sh       通知 + 万人公告 + 位图回执   28 断言
+deploy/scripts/WsProbe.java                 长连探针（curl 不会说 WebSocket）
 ```
 改完代码至少跑相关阶段的那个。压测的延迟数字要看并发（Little 定律），
 高并发下的 P99 量的是客户端排队，不是服务端能力。

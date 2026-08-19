@@ -1,4 +1,4 @@
-package com.lrj.oa.app.web;
+package com.lrj.oa.common.web;
 
 import com.lrj.oa.common.api.Result;
 import com.lrj.oa.common.api.ResultCode;
@@ -11,6 +11,16 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+/**
+ * 全局异常 → Result 的统一映射。
+ *
+ * <p>★ 放在 oa-common 而不是 oa-app：原先它只在主应用里，于是
+ * notify / file / job 三个独立服务<b>没有任何异常处理器</b> ——
+ * 一次权限拒绝（BusinessException PERM_DENIED）在那边表现为 <b>HTTP 500 + 空 body</b>。
+ * 拦是拦住了，但调用方看到的是"服务器坏了"而不是"你没权限"，
+ * 前端无从区分该提示登录、该提示无权限、还是该重试。
+ * 安全语义只有被正确<b>表达</b>出来才算完整。
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
