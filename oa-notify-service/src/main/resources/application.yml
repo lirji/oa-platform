@@ -19,7 +19,14 @@ spring:
   kafka:
     bootstrap-servers: ${OA_KAFKA:localhost:39092}
   flyway:
-    enabled: false          # 迁移由 oa-app 统一执行，独立服务只读同一套 schema
+    # ★ 通知域自己的 schema（oa_notify）由本服务自己迁移，用【独立的历史表】。
+    #   与 oa-app 共用一张 flyway_schema_history 会让两边互相判对方的版本为"未知"，
+    #   下次启动直接拒绝迁移。独立部署单元 = 独立 schema + 独立迁移史。
+    enabled: true
+    locations: classpath:db/migration/notify
+    table: flyway_schema_history_notify
+    baseline-on-migrate: true
+    schemas: oa_notify
 
 management:
   endpoints:
@@ -29,4 +36,20 @@ management:
 
 oa:
   security:
-    mode: DEV               # Phase 2 接入 Casdoor 后改 JWT
+    mode: ${OA_SECURITY_MODE:DEV}
+  notify:
+    ws:
+      # 单机长连上限。按【连接数】扩容是这个服务独立部署的全部理由，
+      # 所以这个数字必须是可观测、可配置的，而不是隐式的"能连多少算多少"。
+      max-sessions: ${OA_NOTIFY_WS_MAX:20000}
+      heartbeat-ms: 30000
+    broadcast:
+      # 全员公告的落库批量。验收线：10,000 人推送完成 < 30s。
+      batch-size: ${OA_NOTIFY_BATCH:1000}
+    channel:
+      # 外部渠道默认全关：引入即安全。打开前必须配好凭据，否则每条通知都会
+      # 在投递上等一次超时，把站内信这条主链路一起拖慢。
+      email:  ${OA_NOTIFY_EMAIL_ENABLED:false}
+      sms:    ${OA_NOTIFY_SMS_ENABLED:false}
+      wecom:  ${OA_NOTIFY_WECOM_ENABLED:false}
+      feishu: ${OA_NOTIFY_FEISHU_ENABLED:false}

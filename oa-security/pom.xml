@@ -20,5 +20,20 @@
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-oauth2-resource-server</artifactId></dependency>
     <dependency><groupId>com.github.ben-manes.caffeine</groupId><artifactId>caffeine</artifactId></dependency>
     <dependency><groupId>org.roaringbitmap</groupId><artifactId>RoaringBitmap</artifactId></dependency>
+    <!-- 授权立场检查规则要在这里编译并发到 test-jar 里，供各可部署单元复用 -->
+    <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <!-- 安全规则只写一份，靠 test-jar 分发；复制粘贴一条安全检查是维护上的定时炸弹 -->
+          <execution><id>test-jar</id><goals><goal>test-jar</goal></goals></execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
