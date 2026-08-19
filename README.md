@@ -28,6 +28,7 @@
 | 会议室并发预定（100 请求抢同一时段） | **恰好 1 成功**（PG 排他约束） | 只成功 1 条 |
 | 万人组织装载（1,000 组织 + 10,000 员工） | **~0.7 s** | 30 s |
 | 考勤日结（10,000 人） | **165 ms** | 10 min |
+| 工作台首屏 API P99（并发 20） | **55.7 ms** | 200 ms |
 
 ---
 
@@ -104,6 +105,10 @@ bash deploy/scripts/phase5-attendance-smoke.sh   # 考勤 + 早高峰压测     
 bash deploy/scripts/phase6-notify-smoke.sh       # 通知 + 万人公告 + 位图回执 28 断言
 bash deploy/scripts/phase7-doc-admin-smoke.sh    # 公文/知识库/会议室排他约束 45 断言
 bash deploy/scripts/phase8-report-audit-smoke.sh # 报表/审计/跑批/文件/渗透   40 断言
+
+# 压测（单文件 Java 程序，无需构建、无需装 k6）
+java deploy/scripts/PunchLoadTest.java      http://localhost:8400 10000 300   # 早高峰打卡
+java deploy/scripts/FullChainLoadTest.java  http://localhost:8400 500 20      # 全链路读路径
 ```
 
 `phase4` 与 `phase4b` 是**两件事**：前者用本地流程替身验 OA 自己的逻辑（不依赖外部进程），
