@@ -114,6 +114,16 @@ java deploy/scripts/FullChainLoadTest.java  http://localhost:8400 500 20      # 
 `phase4` 与 `phase4b` 是**两件事**：前者用本地流程替身验 OA 自己的逻辑（不依赖外部进程），
 后者接真 workflow-platform 验**集成**。两个都要绿。
 
+### CI 纪律（构建期，`mvn test`）
+
+| 检查 | 守什么 |
+|---|---|
+| `ControllerPermissionCoverageTest` / `*AuthorizationStanceTest` | 每个 handler 必须声明授权立场；**四个可部署单元都覆盖** |
+| `ApiSurfaceGoldenTest` | 冻结 120 个端点的「路径 → 权限点」，偷改会让构建失败 |
+| `ArchitectureRulesTest` | 跨模块只走 `..api..`；Controller 不直连 Mapper |
+| `Phase0PinningProbeTest` | 虚拟线程 pinning 回归 |
+| `CompleteTaskVariableGuardTest`（中台侧） | 通用办理的 variables 不能伪造办理人 |
+
 > 本机 Testcontainers 跑不起来（见 `docs/RUNBOOK.md`），所以集成验证一律走
 > "bash 冒烟脚本打运行中的 compose 容器"。
 
