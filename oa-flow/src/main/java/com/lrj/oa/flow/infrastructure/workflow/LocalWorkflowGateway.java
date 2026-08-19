@@ -14,10 +14,9 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * <b>中台的本地测试替身</b>，不是第二个流程引擎。
  *
- * <p>存在的理由：接真中台需要先给 workflow-platform 补一个通用 {@code completeTask} 端点
- * 并部署 {@code oa-generic-approval-v1} BPMN（计划里列为 Phase 4 的前置依赖）。
- * 在那之前，OA 侧的审批链路——审批人计算、发件箱、待办读模型、额度扣减——
- * 需要能端到端跑通并被冒烟验证，否则这些逻辑就只能靠读代码来相信。
+ * <p>存在的理由：中台前置条件（通用 {@code completeTask} 端点 + {@code oa-generic-approval-v1}
+ * BPMN）现已就绪，REMOTE 是默认模式。但把审批链路的可测性绑死在"另一个系统必须在跑"上是脆弱的——
+ * 单测、CI、以及中台停机时的回归，都需要一条不依赖外部进程的路径。
  *
  * <p>它<b>只</b>按流程变量里的 {@code approverChain} 做顺序流转，语义与目标 BPMN 一致：
  * 逐级审批、任一环节驳回即终止。默认<b>不装配</b>（{@code oa.flow.workflow.mode=REMOTE}），
@@ -51,10 +50,9 @@ public class LocalWorkflowGateway implements WorkflowGateway {
 
             ╔══════════════════════════════════════════════════════════════════╗
             ║  oa.flow.workflow.mode=LOCAL —— 正在使用【中台测试替身】          ║
-            ║  仅用于本地端到端验证。接入 workflow-platform 需要：              ║
-            ║    1) 给中台补通用 completeTask 端点（只增不改）                  ║
-            ║    2) 部署 oa-generic-approval-v1 BPMN（必须带 BPMNDI）           ║
-            ║  之后把 mode 改成 REMOTE 即可，业务代码一行不用动。               ║
+            ║  中台侧前置条件均已就绪（通用 completeTask 端点 + oa-generic-     ║
+            ║  approval-v1 BPMN），生产/联调请改成 REMOTE。                     ║
+            ║  保留 LOCAL 的意义：中台不可用时业务链路仍可被测试覆盖。          ║
             ╚══════════════════════════════════════════════════════════════════╝""");
     }
 
@@ -111,6 +109,16 @@ public class LocalWorkflowGateway implements WorkflowGateway {
         } else {
             createTaskFor(pid, next);
         }
+    }
+
+    @Override
+    public java.util.Optional<ProcessInfo> findProcess(String businessKey) {
+        return instances.values().stream()
+                .filter(i -> i.businessKey.equals(businessKey))
+                .findFirst()
+                .map(i -> new ProcessInfo(i.pid, i.businessKey, true));
+        // 替身在流程结束时直接删实例，因此查不到 == 已结束。REMOTE 侧靠 running 字段区分，
+        // 两者对 ApprovalService 的语义一致：Optional.empty() 或 running=false 都表示"不在跑了"。
     }
 
     @Override

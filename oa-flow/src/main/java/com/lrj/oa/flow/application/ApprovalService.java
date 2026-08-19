@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -172,6 +173,12 @@ public class ApprovalService {
 
         gateway.completeTask(taskId, outcome, ctx.userId(), onBehalfOf, comment, Map.of());
         todoMapper.finish(TenantContext.get(), taskId, "DONE");
+        // 接真中台时，"下一级待办出现了"和"流程走完了"都不是推过来的事件——中台的生命周期
+        // 事件契约上是 best-effort。办理是用户正等着结果的时刻，这里同步问一次中台，
+        // 让工作台立刻正确；60 秒一次的对账只作兜底，不作主路径。
+        if (gateway.remote()) {
+            syncFromRemote(task.processInstanceId(), task.businessKey(), outcome);
+        }
 
         ApprovalInstance ins = instanceMapper.selectByProcessInstance(task.processInstanceId());
         if (ins != null) {
@@ -206,6 +213,30 @@ public class ApprovalService {
         todoMapper.upsert(u);
     }
 
+    /**
+     * 办理后立刻与中台对齐一次：有新任务就投影进待办，没有任务且流程已结束就收尾。
+     *
+     * <p>只在 REMOTE 生效。本地替身走回调，已经是同步的。
+     */
+    void syncFromRemote(String processInstanceId, String businessKey, String lastOutcome) {
+        try {
+            List<WorkflowGateway.Task> remaining = gateway.findTasks(null, businessKey);
+            if (!remaining.isEmpty()) {
+                remaining.forEach(this::projectTodo);
+                return;
+            }
+            var info = gateway.findProcess(businessKey);
+            if (info.isEmpty() || !info.get().running()) {
+                String pid = info.map(WorkflowGateway.ProcessInfo::processInstanceId).orElse(processInstanceId);
+                onProcessFinished(pid, "REJECT".equalsIgnoreCase(lastOutcome) ? "REJECTED" : "APPROVED");
+            }
+        } catch (Exception e) {
+            // 对齐失败不能让办理本身回滚——人工决定已经在中台落了，回滚只会让两边更不一致。
+            // 后果由 60 秒对账收敛，这里必须留下可查的痕迹。
+            log.warn("办理后与中台对齐失败 businessKey={}：{}（等待对账收敛）", businessKey, e.toString());
+        }
+    }
+
     /** 流程走完 → 回写实例状态并通知业务侧。 */
     public void onProcessFinished(String processInstanceId, String outcome) {
         ApprovalInstance ins = instanceMapper.selectByProcessInstance(processInstanceId);
@@ -219,6 +250,61 @@ public class ApprovalService {
         var handler = finishHandlers.get(ins.getBizType());
         if (handler != null) handler.accept(ins.getBusinessKey(), outcome);
         log.info("审批结束 bizType={} businessKey={} outcome={}", ins.getBizType(), ins.getBusinessKey(), outcome);
+    }
+
+    /**
+     * 审批实例与中台对账（REMOTE 专用）。补两件中台不会主动告诉 OA 的事：
+     *
+     * <ol>
+     *   <li><b>回绑 processInstanceId</b>——发起走发件箱 → Kafka，是异步的，提单那一刻 OA 拿不到实例 id。
+     *       没有它，待办投影里的 instanceId/bizType 全是 null，工作台显示成一堆"审批 · 审批"。</li>
+     *   <li><b>发现流程已结束</b>——中台的生命周期事件是 best-effort，漏一条就会留下一个
+     *       永远 RUNNING 的单据和一笔永远冻结的额度。额度冻结不释放是会被员工投诉的那种 bug。</li>
+     * </ol>
+     *
+     * <p>结论取自本地 {@code approval_node_log} 的最后一条动作，而不是问中台要——
+     * 中台只知道流程终点，不知道 OA 的"通过/驳回"语义。
+     */
+    @Scheduled(fixedDelayString = "${oa.flow.instance.reconcile-ms:60000}")
+    public void reconcileInstances() {
+        if (!gateway.remote()) return;
+        List<ApprovalInstance> unfinished;
+        try {
+            unfinished = instanceMapper.selectUnfinished(200);
+        } catch (Exception e) {
+            log.debug("审批实例对账取数失败：{}", e.toString());
+            return;
+        }
+        int bound = 0, finished = 0;
+        for (ApprovalInstance ins : unfinished) {
+            try {
+                var info = gateway.findProcess(ins.getBusinessKey());
+                if (info.isEmpty()) continue;   // 中台还没起流程，下一轮再看
+                if (ins.getProcessInstanceId() == null || ins.getProcessInstanceId().isBlank()) {
+                    instanceMapper.bindProcessInstance(ins.getId(), info.get().processInstanceId());
+                    bound++;
+                }
+                if (!info.get().running()) {
+                    onProcessFinished(info.get().processInstanceId(), lastOutcomeOf(ins.getId()));
+                    finished++;
+                }
+            } catch (Exception e) {
+                log.debug("审批实例对账失败 businessKey={}：{}", ins.getBusinessKey(), e.toString());
+            }
+        }
+        if (bound > 0 || finished > 0) {
+            log.info("审批实例对账：回绑 {} 条，收尾 {} 条", bound, finished);
+        }
+    }
+
+    /** 末环节动作决定整单结论：任一环节 REJECT 即驳回（BPMN 的 completionCondition 也是这么写的）。 */
+    private String lastOutcomeOf(Long instanceId) {
+        List<String> actions = jdbc.queryForList("""
+                SELECT action FROM oa_flow.approval_node_log
+                 WHERE instance_id = ? ORDER BY id DESC LIMIT 1
+                """, String.class, instanceId);
+        String last = actions.isEmpty() ? null : actions.get(0);
+        return "REJECT".equalsIgnoreCase(last) ? "REJECTED" : "APPROVED";
     }
 
     public ApprovalInstance findByBusiness(String bizType, String businessKey) {

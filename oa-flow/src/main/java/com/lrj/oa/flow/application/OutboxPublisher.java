@@ -1,9 +1,11 @@
 package com.lrj.oa.flow.application;
 
 import com.lrj.oa.flow.infrastructure.mapper.OutboxMapper;
+import com.lrj.oa.flow.infrastructure.workflow.WorkflowCommandKafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -33,17 +35,34 @@ public class OutboxPublisher {
 
     private final OutboxMapper outboxMapper;
     private final KafkaTemplate<String, String> kafka;
+    /** 中台命令总线；未配置时为 null，此时命令与业务事件同走一条总线（本地替身模式）。 */
+    private final KafkaTemplate<String, String> workflowKafka;
     private final int batchSize;
     private final AtomicLong sent = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
 
     public OutboxPublisher(OutboxMapper outboxMapper,
                            ObjectProvider<KafkaTemplate<String, String>> kafkaProvider,
+                           @Qualifier("workflowCommandKafkaTemplate")
+                           ObjectProvider<KafkaTemplate<String, String>> workflowKafkaProvider,
                            @Value("${oa.flow.outbox.batch-size:100}") int batchSize) {
         this.outboxMapper = outboxMapper;
         this.kafka = kafkaProvider.getIfAvailable();
+        this.workflowKafka = workflowKafkaProvider.getIfAvailable();
         this.batchSize = batchSize;
         if (this.kafka == null) log.warn("未找到 KafkaTemplate，发件箱只入库不投递");
+    }
+
+    /**
+     * 按主题选总线。中台命令必须投到中台自己的 Kafka —— 投错总线时 send() 会正常返回 offset，
+     * 消费方却永远收不到，是一种没有任何错误日志的静默失败。
+     */
+    private KafkaTemplate<String, String> busFor(String topic) {
+        if (workflowKafka != null && topic != null
+                && topic.startsWith(WorkflowCommandKafkaConfig.COMMAND_TOPIC_PREFIX)) {
+            return workflowKafka;
+        }
+        return kafka;
     }
 
     @Scheduled(fixedDelayString = "${oa.flow.outbox.poll-ms:1000}")
@@ -58,7 +77,7 @@ public class OutboxPublisher {
             String payload = (String) row.get("payload");
             try {
                 // 同步等待：投递失败必须能被本事务感知并转入重试，不能 fire-and-forget
-                kafka.send(topic, key, payload).get(10, TimeUnit.SECONDS);
+                busFor(topic).send(topic, key, payload).get(10, TimeUnit.SECONDS);
                 outboxMapper.markSent(id);
                 sent.incrementAndGet();
             } catch (Exception e) {
@@ -73,6 +92,7 @@ public class OutboxPublisher {
         return Map.of("sent", sent.get(), "failed", failed.get(),
                 "pending", outboxMapper.countByStatus("PENDING"),
                 "dead", outboxMapper.countByStatus("FAILED"),
-                "kafkaAvailable", kafka != null);
+                "kafkaAvailable", kafka != null,
+                "workflowBusAvailable", workflowKafka != null);
     }
 }

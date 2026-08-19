@@ -34,6 +34,15 @@ public final class FlowMappers {
 
         @Update("UPDATE oa_flow.approval_instance SET process_instance_id = #{pid}, status = 'RUNNING' WHERE id = #{id}")
         int bindProcessInstance(@Param("id") Long id, @Param("pid") String pid);
+
+        /** 对账用：还没结束的实例。process_instance_id 为空的说明中台那边还没起来（或起了但没回绑）。 */
+        @Select("""
+                SELECT * FROM oa_flow.approval_instance
+                 WHERE status <> 'FINISHED'
+                 ORDER BY id
+                 LIMIT #{limit}
+                """)
+        List<ApprovalInstance> selectUnfinished(@Param("limit") int limit);
     }
 
     @Mapper

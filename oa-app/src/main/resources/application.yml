@@ -82,14 +82,32 @@ oa:
   flow:
     workflow:
       # REMOTE = 接真 workflow-platform（:8300）；LOCAL = 用本地测试替身跑端到端。
-      # 接 REMOTE 前需要中台补一个通用 completeTask 端点并部署 oa-generic-approval-v1 BPMN。
       mode: ${OA_WORKFLOW_MODE:REMOTE}
+      base-url: ${OA_WORKFLOW_URL:http://localhost:8300}
+      # ★ 中台命令必须投到【中台自己的 Kafka】。留空则与业务事件同走 OA 总线，
+      #   此时中台永远收不到 start 命令，且发件箱显示投递成功——一种没有错误日志的静默失败。
+      kafka-bootstrap: ${OA_WORKFLOW_KAFKA:}
+      # 改了 BPMN 才需要置 true：中台的 deploy 端点不做重复过滤，每调一次多一个版本。
+      force-deploy: ${OA_WORKFLOW_FORCE_DEPLOY:false}
     outbox:
       poll-ms: 1000
       batch-size: 100
     todo:
       reconcile-ms: 60000      # 与中台对账（生命周期事件是 best-effort，会漏）
+    instance:
+      reconcile-ms: 60000      # 回绑 processInstanceId + 发现流程已结束（中台不推这两件事）
     approval:
       max-levels: 5
   workflow:
     enabled: false             # 旧开关，保留兼容
+
+# ★ workflow-platform SDK 的开关。默认 false 时注入 NoopWorkflowClient——
+#   它的查询【返回空列表且不报错】，于是 RemoteWorkflowGateway 会一边宣称
+#   remote()=true 一边什么也查不到：待办不出现、对账"成功地什么都没做"、日志一片干净。
+#   OA 用 REMOTE 模式就必须打开它，所以这里直接跟着 mode 走。
+workflow:
+  client:
+    enabled: ${OA_WORKFLOW_CLIENT_ENABLED:true}
+    base-url: ${OA_WORKFLOW_URL:http://localhost:8300}
+    # 写操作在 SDK 未启用时直接抛错，而不是静默跳过——办理审批悄悄没生效是最坏的一种失败。
+    fail-on-disabled-writes: true

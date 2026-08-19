@@ -16,6 +16,16 @@ public interface WorkflowGateway {
     record Task(String taskId, String processInstanceId, String processDefinitionKey,
                 String businessKey, String name, String assignee, String candidateGroup) {}
 
+    /** 中台侧的流程实例状态。running=false 表示流程已走完（中台不会主动推这件事，只能问）。 */
+    record ProcessInfo(String processInstanceId, String businessKey, boolean running) {}
+
+    /**
+     * 按业务单号查流程实例。两个用途：
+     * ① 发起是异步的（发件箱 → Kafka），OA 提单时拿不到 processInstanceId，靠这个回绑；
+     * ② 流程结束中台不会推事件，靠这个发现。
+     */
+    java.util.Optional<ProcessInfo> findProcess(String businessKey);
+
     List<Task> findTasks(String definitionKey, String businessKey);
 
     /** 列出指派给某人的全部待办（对账用）。 */

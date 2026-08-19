@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://lrj.com/workflow/oa">
+
+  <!--
+    OA 通用审批(v1)。ADR-0010:审批人由 OA 侧算好塞进流程变量 approverChain,
+    中台不反查 OA 的组织/汇报线 —— 中台只做编排,不持有业务语义。
+
+    因此这份 BPMN 里【没有】任何 OA 概念:没有"直属上级""部门经理""请假天数",
+    只有一条"按给定名单顺序审批"的编排。请假、报销、用印、调岗共用同一份定义,
+    差异全在 approverChain 的算法里 —— 那是 OA 的 ApproverResolver 的事。
+
+    变量:
+      approverChain  List<String>  审批人 userId 顺序表(必填,至少一个)
+      approver       String        多实例元素变量,当前审批人(由引擎注入)
+      outcome        String        每次办理写入,APPROVE / REJECT
+      comment        String        办理意见
+      applicant / applicantOrgId / applicantOrgPath / bizType / approvalInstanceId  业务冗余
+  -->
+  <process id="oaGenericApproval" name="OA 通用审批" isExecutable="true">
+
+    <startEvent id="start" name="提交"/>
+    <sequenceFlow id="f_start_approve" sourceRef="start" targetRef="approve"/>
+
+    <!--
+      顺序多实例:approverChain 有几个人就串几级。
+      completionCondition 让任一环节 REJECT 立刻终止后续环节 —— 驳回不该继续往上报。
+      isSequential=true 是刻意的:并行会签是另一种语义(需要"几人通过算通过"的阈值),
+      通用审批首版不做,避免把两种语义混在一个定义里靠变量开关切换。
+    -->
+    <userTask id="approve" name="审批" flowable:assignee="${approver}">
+      <multiInstanceLoopCharacteristics isSequential="true"
+                                        flowable:collection="${approverChain}"
+                                        flowable:elementVariable="approver">
+        <completionCondition>${outcome == 'REJECT'}</completionCondition>
+      </multiInstanceLoopCharacteristics>
+    </userTask>
+    <sequenceFlow id="f_approve_gw" sourceRef="approve" targetRef="resultGw"/>
+
+    <!-- default 指向"通过":走完全部环节且没人驳回,就是通过。 -->
+    <exclusiveGateway id="resultGw" name="审批结论" default="f_result_approved"/>
+    <sequenceFlow id="f_result_rejected" sourceRef="resultGw" targetRef="endRejected">
+      <conditionExpression xsi:type="tFormalExpression">${outcome == 'REJECT'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="f_result_approved" sourceRef="resultGw" targetRef="endApproved"/>
+
+    <endEvent id="endApproved" name="通过"/>
+    <endEvent id="endRejected" name="驳回"/>
+
+  </process>
+
+  <!--
+    BPMNDI 不是可选装饰:缺了它 workflow-console 的流程图渲染不出来,
+    Flowable 生成的自动布局对多实例任务也画不对。计划里明确要求带 DI。
+  -->
+  <bpmndi:BPMNDiagram id="D_oaGenericApproval">
+    <bpmndi:BPMNPlane id="P_oaGenericApproval" bpmnElement="oaGenericApproval">
+      <bpmndi:BPMNShape id="S_start" bpmnElement="start">
+        <omgdc:Bounds x="150" y="196" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_approve" bpmnElement="approve">
+        <omgdc:Bounds x="240" y="171" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_resultGw" bpmnElement="resultGw">
+        <omgdc:Bounds x="420" y="191" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_endApproved" bpmnElement="endApproved">
+        <omgdc:Bounds x="530" y="196" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_endRejected" bpmnElement="endRejected">
+        <omgdc:Bounds x="530" y="300" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="E_start_approve" bpmnElement="f_start_approve">
+        <omgdi:waypoint x="180" y="211"/>
+        <omgdi:waypoint x="240" y="211"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_approve_gw" bpmnElement="f_approve_gw">
+        <omgdi:waypoint x="360" y="211"/>
+        <omgdi:waypoint x="420" y="211"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_result_approved" bpmnElement="f_result_approved">
+        <omgdi:waypoint x="460" y="211"/>
+        <omgdi:waypoint x="530" y="211"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_result_rejected" bpmnElement="f_result_rejected">
+        <omgdi:waypoint x="440" y="231"/>
+        <omgdi:waypoint x="440" y="315"/>
+        <omgdi:waypoint x="530" y="315"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
