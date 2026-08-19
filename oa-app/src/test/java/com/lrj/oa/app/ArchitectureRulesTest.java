@@ -21,13 +21,26 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  */
 class ArchitectureRulesTest {
 
+    // ⚠️ 不能加 DO_NOT_INCLUDE_JARS：其它业务模块是以 jar 形式挂在 oa-app 的 classpath 上的，
+    // 排除 jar 等于把所有跨模块规则变成空转 —— 一条永远为真的规则比没有规则更危险。
     private static final JavaClasses CLASSES = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_JARS)
             .importPackages("com.lrj.oa");
 
     private static final String[] BIZ_MODULES =
             {"org", "iam", "flow", "attendance", "doc", "admin", "report"};
+
+    @Test
+    @DisplayName("前置：确实扫到了各业务模块的类（防止规则空转）")
+    void import_actually_covers_business_modules() {
+        for (String mod : BIZ_MODULES) {
+            long n = CLASSES.stream().filter(c -> c.getPackageName().startsWith("com.lrj.oa." + mod)).count();
+            if ("org".equals(mod)) {
+                org.assertj.core.api.Assertions.assertThat(n)
+                        .as("oa-%s 的类没被扫到，下面所有跨模块规则都会空转", mod).isGreaterThan(10);
+            }
+        }
+    }
 
     @Test
     @DisplayName("跨模块禁止直接依赖对方的 domain / infrastructure（只能走 ..api..）")

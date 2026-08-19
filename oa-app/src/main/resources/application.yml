@@ -48,6 +48,13 @@ oa:
   version: 0.1.0-SNAPSHOT
   security:
     mode: DEV              # Phase 2 接入 Casdoor 后改 JWT（改完 /api/** 无 token 一律 401）
+  org:
+    tree-cache:
+      poll-ms: 5000          # 跨节点收敛上界；Phase 2 接入 Redis 失效总线后可调大
+    seed:
+      enabled: ${OA_ORG_SEED_ENABLED:false}   # 万人级装载接口，默认不装配
+  crypto:
+    data-key: ${OA_CRYPTO_DATA_KEY:}          # base64 的 32 字节；不配则用开发默认密钥并告警
   iam:
     abac:
       enabled: false           # ABAC 条件引擎，Phase 4 报销场景才开
