@@ -19,7 +19,12 @@ spring:
   kafka:
     bootstrap-servers: ${OA_KAFKA:localhost:39092}
   flyway:
-    enabled: false          # 迁移由 oa-app 统一执行，独立服务只读同一套 schema
+    # 跑批自己的表（oa_sys.job_run）由本服务迁移，独立历史表 —— 同 notify 的理由：
+    # 与 oa-app 共用一张历史表会让两边互判对方版本为"未知"而拒绝启动。
+    enabled: true
+    locations: classpath:db/migration/job
+    table: flyway_schema_history_job
+    baseline-on-migrate: true
 
 management:
   endpoints:

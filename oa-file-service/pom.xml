@@ -17,6 +17,20 @@
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-common</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-protocol</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId></dependency>
+    <!-- 判权引擎必须嵌在每个可部署单元里；文件下载是 IDOR 的重灾区，尤其不能只靠注解摆着 -->
+    <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-iam</artifactId></dependency>
+    <dependency><groupId>io.minio</groupId><artifactId>minio</artifactId></dependency>
+    <dependency><groupId>com.baomidou</groupId><artifactId>mybatis-plus-spring-boot3-starter</artifactId></dependency>
+    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
+    <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
+    <dependency>
+      <groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId>
+      <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+    </dependency>
+    <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
     <plugins>

@@ -68,6 +68,11 @@ JDK21 虚拟线程在 `synchronized` 里阻塞会 pin 载体线程。Phase 0 的
     别去 repair 绕过；兼容逻辑写进新版本号的迁移里。
 12. **冒烟脚本里无参 `wait` 会等上你用 `&` 起的应用进程**（它永不退出）。
     并发请求一律用 `xargs -P`，别用 `cmd & ... wait`。
+13. **审计切面的 Order 必须小于 `RequiresPermAspect`（+10），即在它外层**。
+    写成内层的话，判权抛异常时审计切面根本没被进入 —— SUCCESS 都记着，
+    唯独 DENIED 一条也没有，而"谁在试探哪个接口"恰恰是审计最该回答的问题。
+14. **JIT 提权默认活 1 小时，会跨两次冒烟继续有效**，让"未提权应被拒"假失败。
+    冒烟开头要先走 API 撤掉遗留的 TEMPORARY 授权（走 API 才会 bump epoch）。
 
 ## 本机现实
 - **Testcontainers 跑不起来** → 集成验证一律写成 bash 冒烟脚本打运行中的 compose 容器。
@@ -88,6 +93,7 @@ deploy/scripts/phase4b-remote-smoke.sh      审批·接真中台（集成）    
 deploy/scripts/phase5-attendance-smoke.sh   考勤 + 早高峰压测           19 断言
 deploy/scripts/phase6-notify-smoke.sh       通知 + 万人公告 + 位图回执   28 断言
 deploy/scripts/phase7-doc-admin-smoke.sh    公文/知识库/会议室排他约束   45 断言
+deploy/scripts/phase8-report-audit-smoke.sh 报表/审计/跑批/文件/渗透     40 断言
 deploy/scripts/WsProbe.java                 长连探针（curl 不会说 WebSocket）
 ```
 改完代码至少跑相关阶段的那个。压测的延迟数字要看并发（Little 定律），

@@ -8,6 +8,26 @@ spring:
   threads:
     virtual:
       enabled: true
+  servlet:
+    multipart:
+      # 必须与 oa.file.max-bytes 对齐。Spring 的上限比业务上限小的话，
+      # 请求会在进 Controller 之前就被 Tomcat 拒掉，业务侧那句友好的错误提示永远不会执行。
+      max-file-size: ${OA_FILE_MAX:50MB}
+      max-request-size: ${OA_FILE_MAX:50MB}
+  datasource:
+    url: jdbc:postgresql://${OA_PG_HOST:localhost}:${OA_PG_PORT:35432}/${OA_PG_DB:oa}
+    username: ${OA_PG_USER:oa}
+    password: ${OA_PG_PASSWORD:oa_dev_pwd}
+  data:
+    redis:
+      host: ${OA_REDIS_HOST:localhost}
+      port: ${OA_REDIS_PORT:36379}
+  flyway:
+    # 自有表（oa_sys.file_object）自己迁移，独立历史表 —— 同 notify / job 的理由。
+    enabled: true
+    locations: classpath:db/migration/file
+    table: flyway_schema_history_file
+    baseline-on-migrate: true
 
 management:
   endpoints:
@@ -17,4 +37,12 @@ management:
 
 oa:
   security:
-    mode: DEV               # Phase 2 接入 Casdoor 后改 JWT
+    mode: ${OA_SECURITY_MODE:DEV}
+  file:
+    endpoint: ${OA_MINIO_ENDPOINT:http://localhost:39000}
+    access-key: ${OA_MINIO_ROOT_USER:oaminio}
+    secret-key: ${OA_MINIO_ROOT_PASSWORD:oaminio_dev_pwd}
+    bucket: ${OA_MINIO_BUCKET:oa-files}
+    max-bytes: ${OA_FILE_MAX_BYTES:52428800}
+    # 预签名 URL 是直连对象存储的，签出去就绕过了应用层判权 —— 时效即泄露窗口。
+    presign-seconds: ${OA_FILE_PRESIGN_SECONDS:300}
