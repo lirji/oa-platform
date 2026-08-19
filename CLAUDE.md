@@ -107,6 +107,8 @@ deploy/scripts/PunchLoadTest.java           早高峰打卡压测（单文件，
 deploy/scripts/FullChainLoadTest.java       全链路读路径压测（同上，替代未装的 k6）
 deploy/scripts/gen-api-doc.py               从源码重新生成 docs/API.md（别手写它）
 ```
+改完代码至少跑相关阶段的那个。压测的延迟数字要看并发（Little 定律），
+高并发下的 P99 量的是客户端排队，不是服务端能力。
 
 ## 前端契约（Phase 3 开工前已补齐的后端能力）
 
@@ -122,8 +124,6 @@ deploy/scripts/gen-api-doc.py               从源码重新生成 docs/API.md（
   `GET /org/directory/delta?since=`（含 `deletions` 墓碑与 `fullResync` 逃生舱）。
   ⚠️ IndexedDB 缓存必须按 `(userId, permVersion)` 分区、敏感字段不落盘 ——
   通讯录是 per-viewer 的（`@DataScope` + `@Sensitive`）。
-改完代码至少跑相关阶段的那个。压测的延迟数字要看并发（Little 定律），
-高并发下的 P99 量的是客户端排队，不是服务端能力。
 
 ## 前端
 PC `oa-console` 与移动端 `oa-mobile` 在**动手实现前必须先走 `/frontend-plan`**
