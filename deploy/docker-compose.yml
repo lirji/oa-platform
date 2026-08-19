@@ -90,6 +90,93 @@ services:
       timeout: 5s
       retries: 10
 
+  # ─────────────────────────────────────────────────────────────
+  # 应用服务。放在 `apps` profile 下：默认 `up` 只起基建，
+  # 本地开发时应用跑在 IDE / java -jar 里更方便调试；
+  # 要起全栈就加 --profile apps。
+  # 镜像先用 deploy/build-images.sh 构建（不能容器内构建，见 Dockerfile 说明）。
+  # ─────────────────────────────────────────────────────────────
+  oa-app:
+    image: oa-platform/oa-app:${OA_IMAGE_TAG:-local}
+    container_name: oa-app
+    profiles: ["apps"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      kafka:    { condition: service_healthy }
+    ports:
+      - "${OA_APP_PORT:-8400}:8400"
+    environment:
+      OA_APP_PORT: 8400
+      # 容器内走服务名，不是 localhost
+      OA_PG_HOST: postgres
+      OA_PG_PORT: 5432
+      OA_PG_DB: ${OA_PG_DB:-oa}
+      OA_PG_USER: ${OA_PG_USER:-oa}
+      OA_PG_PASSWORD: ${OA_PG_PASSWORD:-oa_dev_pwd}
+      OA_REDIS_HOST: redis
+      OA_REDIS_PORT: 6379
+      OA_KAFKA: kafka:9092
+      # ⚠️ 生产必须注入真实密钥，否则敏感字段用的是仓库里写死的开发默认密钥
+      OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
+      OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_BOOTSTRAP_ADMIN: ${OA_BOOTSTRAP_ADMIN:-}
+      OA_ORG_SEED_ENABLED: ${OA_ORG_SEED_ENABLED:-false}
+      OA_WORKFLOW_MODE: ${OA_WORKFLOW_MODE:-REMOTE}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8400/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+  oa-notify:
+    image: oa-platform/oa-notify-service:${OA_IMAGE_TAG:-local}
+    container_name: oa-notify
+    profiles: ["apps"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    ports:
+      - "${OA_NOTIFY_PORT:-8401}:8401"
+    environment:
+      OA_NOTIFY_PORT: 8401
+      OA_PG_HOST: postgres
+      OA_PG_PORT: 5432
+      OA_REDIS_HOST: redis
+      OA_REDIS_PORT: 6379
+      OA_KAFKA: kafka:9092
+
+  oa-file:
+    image: oa-platform/oa-file-service:${OA_IMAGE_TAG:-local}
+    container_name: oa-file
+    profiles: ["apps"]
+    depends_on:
+      minio: { condition: service_started }
+    ports:
+      - "${OA_FILE_PORT:-8402}:8402"
+    environment:
+      OA_FILE_PORT: 8402
+      OA_MINIO_ENDPOINT: http://minio:9000
+      OA_MINIO_ROOT_USER: ${OA_MINIO_ROOT_USER:-oaminio}
+      OA_MINIO_ROOT_PASSWORD: ${OA_MINIO_ROOT_PASSWORD:-oaminio_dev_pwd}
+
+  oa-job:
+    image: oa-platform/oa-job-service:${OA_IMAGE_TAG:-local}
+    container_name: oa-job
+    profiles: ["apps"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports:
+      - "${OA_JOB_PORT:-8403}:8403"
+    environment:
+      OA_JOB_PORT: 8403
+      OA_PG_HOST: postgres
+      OA_PG_PORT: 5432
+      OA_REDIS_HOST: redis
+      OA_REDIS_PORT: 6379
+      OA_KAFKA: kafka:9092
+
 volumes:
   oa-pg-data:
   oa-minio-data:
