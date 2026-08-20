@@ -1,0 +1,49 @@
+/**
+ * 组织树的纯逻辑（不含 React / antd）。抽出来是为了能表驱动地测 ——
+ * 成环判定写在组件闭包里的话，唯一的验证方式是真的去拖一次。
+ */
+
+/** 判定只需要 id 与 path 两个字段，不必依赖整个 OrgNode。 */
+export interface TreePathNode {
+  id: number
+  path: string
+  children?: readonly TreePathNode[]
+}
+
+/** 把嵌套树摊平成 id → 节点 的索引。 */
+export function indexTree<T extends TreePathNode>(nodes: readonly T[]): Map<number, T> {
+  const m = new Map<number, T>()
+  const walk = (ns: readonly T[]) => {
+    for (const n of ns) {
+      m.set(n.id, n)
+      walk((n.children ?? []) as readonly T[])
+    }
+  }
+  walk(nodes)
+  return m
+}
+
+/**
+ * 成环预判：不能把一个节点拖进它自己或它的后代。
+ *
+ * <p>用 path 前缀判，与后端 `org_path LIKE '前缀%'` 是同一套语义（硬约束第 4 条）。
+ *
+ * <p>★ **这个判定的正确性完全依赖 path 的尾斜杠**。后端保证 path 恒为 `/a/b/c/`
+ * 形式（`OrgUnitService` 的类注释第一条）。少了尾斜杠的话，
+ * `/1/23/` 会被判成 `/1/2` 的后代 —— 于是"把部门拖进 23 号部门"被禁掉，
+ * 而 2 号和 23 号之间毫无关系。这种错只在 id 恰好是另一个 id 的前缀时出现，
+ * 小数据集上永远测不出来。
+ *
+ * <p>找不到节点时返回 false（宁可禁掉一次合法拖拽，也不要放过一次成环）。
+ */
+export function canDrop(
+  dragId: number,
+  dropId: number,
+  index: ReadonlyMap<number, TreePathNode>,
+): boolean {
+  const drag = index.get(dragId)
+  const drop = index.get(dropId)
+  if (!drag || !drop) return false
+  if (dragId === dropId) return false
+  return !drop.path.startsWith(drag.path)
+}

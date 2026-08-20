@@ -35,6 +35,14 @@ apiClient.interceptors.request.use(async (cfg) => {
  */
 let renewing: Promise<boolean> | null = null
 
+/**
+ * ★ **放弃也要单飞**。原来只对 renew 做了单飞，giveUp 是每个失败请求各调一次 ——
+ * 5 个并发 401 就是 5 次 `signinRedirect()`，连着导航五次。
+ * "只续期一次"容易想到，"只跳一次登录"经常漏，而它同样会毁掉登录流程
+ * （最后一次导航可能覆盖掉前面已经带上的 state，回跳到错的地方）。
+ */
+let givingUp: Promise<void> | null = null
+
 apiClient.interceptors.response.use(
   (resp) => {
     readPermVersion(resp.headers)
@@ -57,7 +65,10 @@ apiClient.interceptors.response.use(
     } catch {
       // 续期本身失败，落到 giveUp
     }
-    await identity.giveUp()
+    if (!givingUp) {
+      givingUp = identity.giveUp().finally(() => { givingUp = null })
+    }
+    await givingUp
     return Promise.reject(error)
   },
 )

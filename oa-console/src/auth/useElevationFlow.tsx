@@ -3,7 +3,7 @@ import { App, Alert, Form, InputNumber, Input, Modal, Select, Typography } from 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@oa/shared/api/client'
 import { errText, type NormalizedError } from '@oa/shared/api/errors'
-import { usePerm } from './usePerm'
+import { usePerm, usePermVersion } from './usePerm'
 import { PERM_KEY, ELEVATION_KEY } from './PermBridge'
 
 interface Role { id: number; code: string; name: string }
@@ -24,6 +24,7 @@ export function useElevationFlow() {
   const { message } = App.useApp()
   const qc = useQueryClient()
   const perm = usePerm()
+  const permVersion = usePermVersion()
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<NormalizedError | null>(null)
   const [retry, setRetry] = useState<(() => void) | null>(null)
@@ -32,7 +33,7 @@ export function useElevationFlow() {
   const canElevate = perm.has('oa:iam:elevate')
 
   const roles = useQuery({
-    queryKey: ['my-roles'],
+    queryKey: ['my-roles', permVersion],
     queryFn: async () => (await apiClient.get('/api/v1/iam/roles/mine')).data.data as Role[],
     enabled: open && canElevate,
     staleTime: 60_000,

@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
 import { useElevationFlow } from '../../auth/useElevationFlow'
 import { useAppBreakpoint } from '../../hooks/useAppBreakpoint'
+import { usePermVersion } from '../../auth/usePerm'
 
 interface AuditRow {
   id: number; actorId: string | null; actorName: string | null; onBehalfOf: string | null
@@ -21,6 +22,7 @@ interface AuditRow {
  * 持 SUPER_ADMIN 直接进也会 3002 —— 让"我现在要查审计"成为一个**有记录、有时限**的动作。
  */
 export default function AuditPage() {
+  const permVersion = usePermVersion()
   const { message } = App.useApp()
   const elevate = useElevationFlow()
   const [filters, setFilters] = useState<{ actorId?: string; deniedOnly?: boolean }>({})
@@ -28,7 +30,7 @@ export default function AuditPage() {
   const bp = useAppBreakpoint()
 
   const q = useQuery({
-    queryKey: ['audit', filters],
+    queryKey: ['audit', filters, permVersion],
     queryFn: async () => {
       const p = new URLSearchParams({ limit: '100' })
       if (filters.actorId) p.set('actorId', filters.actorId)

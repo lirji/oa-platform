@@ -7,6 +7,7 @@ import { errText } from '@oa/shared/api/errors'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
 import Can from '../../auth/Can'
+import { usePermVersion } from '../../auth/usePerm'
 
 interface Role { id: number; code: string; name: string; defaultScope: string }
 interface GrantRecord {
@@ -18,6 +19,7 @@ interface GrantRecord {
 const GRANTS_KEY = 'iam-grants'
 
 export default function GrantsPage() {
+  const permVersion = usePermVersion()
   const { message } = App.useApp()
   const qc = useQueryClient()
   const [form] = Form.useForm()
@@ -32,7 +34,7 @@ export default function GrantsPage() {
   })
 
   const grants = useQuery({
-    queryKey: [GRANTS_KEY, subject],
+    queryKey: [GRANTS_KEY, subject, permVersion],
     queryFn: async () =>
       (await apiClient.get(
         `/api/v1/iam/grants?subjectType=${subject!.type}&subjectId=${encodeURIComponent(subject!.id)}`,

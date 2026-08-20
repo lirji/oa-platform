@@ -6,7 +6,7 @@ import { apiClient } from '@oa/shared/api/client'
 import { errText, normalizeError } from '@oa/shared/api/errors'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
-import { usePerm } from '../../auth/usePerm'
+import { usePerm, usePermVersion } from '../../auth/usePerm'
 import { useElevationFlow } from '../../auth/useElevationFlow'
 
 interface Todo {
@@ -26,15 +26,16 @@ export default function WorkbenchPage() {
   const { message } = App.useApp()
   const qc = useQueryClient()
   const perm = usePerm()
+  const permVersion = usePermVersion()
   const elevate = useElevationFlow()
   const [tab, setTab] = useState('todo')
 
   const todos = useQuery({
-    queryKey: [TODO_KEY],
+    queryKey: [TODO_KEY, permVersion],
     queryFn: async () => (await apiClient.get('/api/v1/flow/todos?limit=50')).data.data as Todo[],
   })
   const mine = useQuery({
-    queryKey: [MINE_KEY],
+    queryKey: [MINE_KEY, permVersion],
     queryFn: async () => (await apiClient.get('/api/v1/flow/todos/mine?limit=50')).data.data as MyApplication[],
     enabled: tab === 'mine',
   })

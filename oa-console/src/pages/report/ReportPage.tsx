@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { apiClient } from '@oa/shared/api/client'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
+import { usePermVersion } from '../../auth/usePerm'
 
 /**
  * ★ 驾驶舱的后端返回是 `Map<String,Object>`（未类型化，见 CLAUDE.md 硬约束第 9 条的例外），
@@ -27,8 +28,9 @@ type Approval = z.infer<typeof Approval>
 type Headcount = z.infer<typeof Headcount>
 
 export default function ReportPage() {
+  const permVersion = usePermVersion()
   const overview = useQuery({
-    queryKey: ['report-overview'],
+    queryKey: ['report-overview', permVersion],
     queryFn: async () => {
       const { data } = await apiClient.get('/api/v1/report/overview')
       // overview 是 Map-of-List（`{approval:[...], headcountTop:[...]}`），不是 List<Map>

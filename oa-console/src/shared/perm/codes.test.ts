@@ -53,7 +53,11 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
     if (statSync(p).isDirectory()) sourceFiles(p, acc)
-    else if (/\.tsx?$/.test(name) && !/codes\.(ts|test\.ts)$/.test(name)) acc.push(p)
+    // ★ 排除测试文件。测试**需要**引用不存在的 code 来证明"未知 code 一律判拒"，
+    //   也需要拿 DISABLED 的 code 当 3002 的夹具。把夹具算进来，
+    //   就是逼着测试去挑一个"正在被用"的真 code —— 那才是真会漂的写法。
+    //   这两条规则管的是 UI 源码：用错 code 的测试会因为断言本身失败，不需要这里兜。
+    else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) && !/codes\.ts$/.test(name)) acc.push(p)
   }
   return acc
 }
@@ -84,12 +88,7 @@ describe('permCode 常量与源码的一致性（验收 A10）', () => {
   })
 
   it('UI 源码不引用 DISABLED 的 code（目录里有、但没有任何 handler）', () => {
-    // ★ 只管 UI 源码：测试文件拿 DISABLED 的 code 当夹具是正当的
-    //   （`errors.test.ts` 用 `oa:employee:export` 造 3002，它恰好是需提权的那类），
-    //   把夹具也算进来会逼着测试去挑一个"正在被用"的 code —— 那才是真会漂的写法。
-    const dead = [...used]
-      .map(([c, where]) => [c, where.filter((w) => !/\.test\.tsx?$/.test(w))] as const)
-      .filter(([c, where]) => DISABLED_PERM_CODES.has(c) && where.length > 0)
+    const dead = [...used].filter(([c]) => DISABLED_PERM_CODES.has(c))
     expect(
       dead.map(([c, where]) => `${c} ← ${where.join(', ')}`),
       '为没有 handler 的 code 渲染入口 = 用户点了 404，比没有这个按钮更糟',

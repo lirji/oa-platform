@@ -12,6 +12,7 @@ import { PageSkeleton, ErrorState } from '../../components/common/AsyncState'
 import { useSearchParams } from 'react-router-dom'
 import { colors } from '../../theme/colors'
 import { useAppBreakpoint } from '../../hooks/useAppBreakpoint'
+import { usePermVersion } from '../../auth/usePerm'
 
 /** 一条授权来源。后端 `/iam/admin/why` 返回，已是 camelCase 类型化 record。 */
 interface PermSource {
@@ -36,6 +37,7 @@ interface PermSource {
  * 选中态放 `useSearchParams`：沙盘状态可分享、可刷新恢复，演示时直接贴链接。
  */
 export default function SandboxPage() {
+  const permVersion = usePermVersion()
   const [sp, setSp] = useSearchParams()
   const bp = useAppBreakpoint()
   const userId = sp.get('userId') ?? ''
@@ -61,7 +63,7 @@ export default function SandboxPage() {
   }
 
   const why = useQuery({
-    queryKey: ['sandbox-why', userId, permCode],
+    queryKey: ['sandbox-why', userId, permCode, permVersion],
     queryFn: async () =>
       (await apiClient.get(`/api/v1/iam/admin/why?userId=${encodeURIComponent(userId)}&permCode=${encodeURIComponent(permCode)}`)).data.data,
     enabled: Boolean(userId && permCode),
@@ -69,7 +71,7 @@ export default function SandboxPage() {
   })
 
   const explain = useQuery({
-    queryKey: ['sandbox-explain', userId, permCode],
+    queryKey: ['sandbox-explain', userId, permCode, permVersion],
     queryFn: async () =>
       (await apiClient.get(`/api/v1/iam/admin/explain?userId=${encodeURIComponent(userId)}&permCode=${encodeURIComponent(permCode)}`)).data.data,
     enabled: Boolean(userId),
@@ -77,7 +79,7 @@ export default function SandboxPage() {
   })
 
   const preview = useQuery({
-    queryKey: ['sandbox-preview', userId],
+    queryKey: ['sandbox-preview', userId, permVersion],
     queryFn: async () =>
       (await apiClient.get(`/api/v1/iam/admin/preview?userId=${encodeURIComponent(userId)}`)).data.data,
     enabled: Boolean(userId) && inspectorOpen,
@@ -280,8 +282,9 @@ export default function SandboxPage() {
 
 /** 「能查到的数据行数」—— 数据权限差异最直观的观测点。 */
 function VisibleRows({ userId }: { userId: string }) {
+  const permVersion = usePermVersion()
   const q = useQuery({
-    queryKey: ['sandbox-visible', userId],
+    queryKey: ['sandbox-visible', userId, permVersion],
     // 用 X-OA-User 以他人身份查可见人数。★ 这条只在 DEV 模式有效，
     // JWT 模式下后端忽略该头 —— 届时应由后端把 visibleCount 并进 /preview。
     queryFn: async () =>
@@ -301,9 +304,10 @@ function VisibleRows({ userId }: { userId: string }) {
 
 /** 现场实测判权 P99 —— "判权 P99 < 1ms" 这条验收标准的按钮版。 */
 function BenchButton({ userId, permCode }: { userId: string; permCode: string }) {
+  const permVersion = usePermVersion()
   const [result, setResult] = useState<string | null>(null)
   const q = useQuery({
-    queryKey: ['sandbox-bench', userId, permCode],
+    queryKey: ['sandbox-bench', userId, permCode, permVersion],
     queryFn: async () => {
       const { data } = await apiClient.get(
         `/api/v1/iam/admin/bench?userId=${encodeURIComponent(userId)}&permCode=${encodeURIComponent(permCode)}&iterations=50000`)

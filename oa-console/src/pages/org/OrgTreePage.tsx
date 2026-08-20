@@ -7,7 +7,8 @@ import { errText, normalizeError } from '@oa/shared/api/errors'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { PageSkeleton, ErrorState } from '../../components/common/AsyncState'
 import { ScopeBanner } from '../../components/common/ScopeHint'
-import { usePerm } from '../../auth/usePerm'
+import { usePerm, usePermVersion } from '../../auth/usePerm'
+import { canDrop as canDropPure, indexTree } from './orgTree'
 
 interface OrgNode {
   id: number; parentId: number | null; code: string; name: string; type: string
@@ -24,12 +25,13 @@ export default function OrgTreePage() {
   const { message, modal } = App.useApp()
   const qc = useQueryClient()
   const perm = usePerm()
+  const permVersion = usePermVersion()
   const [selected, setSelected] = useState<OrgNode | null>(null)
 
   // ★ 必须传 maxDepth：缺省是 Integer.MAX_VALUE，一次返回整棵树。
   //   3000 节点的嵌套 JSON 一把拉回来 + antd Tree 全量渲染会卡 1–3 秒。
   const tree = useQuery({
-    queryKey: [TREE_KEY, 2],
+    queryKey: [TREE_KEY, 2, permVersion],
     queryFn: async () => (await apiClient.get('/api/v1/org/units/tree?maxDepth=2')).data.data as OrgNode[],
   })
 
@@ -50,20 +52,10 @@ export default function OrgTreePage() {
     },
   })
 
-  const nodeIndex = useMemo(() => {
-    const m = new Map<number, OrgNode>()
-    const walk = (ns: OrgNode[]) => ns.forEach((n) => { m.set(n.id, n); walk(n.children ?? []) })
-    walk(tree.data ?? [])
-    return m
-  }, [tree.data])
+  const nodeIndex = useMemo(() => indexTree(tree.data ?? []), [tree.data])
 
-  /** 成环预判：不能拖到自己或自己的后代。用 path 前缀判，与后端同一套语义。 */
-  const canDrop = (dragId: number, dropId: number) => {
-    const drag = nodeIndex.get(dragId); const drop = nodeIndex.get(dropId)
-    if (!drag || !drop) return false
-    if (dragId === dropId) return false
-    return !drop.path.startsWith(drag.path)
-  }
+  // 成环预判是纯函数（`./orgTree`），表驱动测在 orgTree.test.ts。
+  const canDrop = (dragId: number, dropId: number) => canDropPure(dragId, dropId, nodeIndex)
 
   const toTreeData = (ns: OrgNode[]): TreeDataNode[] =>
     ns.map((n) => ({

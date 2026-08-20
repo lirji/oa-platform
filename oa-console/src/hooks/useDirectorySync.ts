@@ -20,7 +20,7 @@ export interface DirEntry {
   positionName: string | null
 }
 
-interface Meta {
+export interface Meta {
   /** 上次同步到的水位线。 */
   since: number
   /** ★ 缓存归属：谁的、在哪个权限版本下看到的。 */
@@ -74,11 +74,15 @@ export function useDirectorySync() {
     if (!userId || running.current) return
     running.current = true
     setError(null)
+    // ★ 连接必须在 finally 里关。不关的话每次同步（每次权限版本变化、每次手动
+    //   resync）都会多留一个 IDBDatabase 连接：既是泄漏，又会让将来的
+    //   `DB_VERSION` 升级被 blocked —— 升级事务根本不会触发，
+    //   表现是"新版 schema 的代码跑在旧 schema 的库上"。
+    let db: IDBPDatabase | null = null
     try {
-      let db: IDBPDatabase | null = null
       try {
         db = await open()
-      } catch (e) {
+      } catch {
         // 隐私模式 / 配额为 0：降级为纯网络，不再尝试写库
         setDegraded(true)
       }
@@ -143,6 +147,7 @@ export function useDirectorySync() {
       setError(msg)
       setEntries((prev) => { if (!prev.length) setFatal(msg); return prev })
     } finally {
+      db?.close()
       setLoading(false)
       running.current = false
     }
@@ -163,14 +168,22 @@ const strip = (e: DirEntry & { syncSeq?: number }): DirEntry => ({
   name: e.name, orgName: e.orgName, positionName: e.positionName,
 })
 
-function merge(base: DirEntry[], changed: DirEntry[], deleted: number[]): DirEntry[] {
+/**
+ * 增量合并。导出是为了能表驱动地测 —— 墓碑处理写错的表现是
+ * "本地一直躺着已离职的人"，而那在界面上看起来完全正常。
+ */
+export function merge(base: DirEntry[], changed: DirEntry[], deleted: number[]): DirEntry[] {
   const m = new Map(base.map((e) => [e.employeeId, e]))
   changed.forEach((e) => m.set(e.employeeId, e))
   deleted.forEach((id) => m.delete(id))
   return [...m.values()]
 }
 
-async function persist(
+/**
+ * 落盘一批变更。导出是为了能直接测配额超限那条分支 ——
+ * 它只在磁盘真的满了时才走到，而那正是最不该在用户机器上第一次运行的代码。
+ */
+export async function persist(
   db: IDBPDatabase, changed: DirEntry[], deleted: number[], meta: Meta,
   onQuotaExceeded: (v: boolean) => void,
 ) {

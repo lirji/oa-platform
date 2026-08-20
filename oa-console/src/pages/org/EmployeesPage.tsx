@@ -5,6 +5,7 @@ import { apiClient } from '@oa/shared/api/client'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
 import { ScopeBanner } from '../../components/common/ScopeHint'
+import { usePermVersion } from '../../auth/usePerm'
 
 interface Entry {
   employeeId: number; userId: string; empNo: string; name: string; email: string | null
@@ -13,8 +14,9 @@ interface Entry {
 }
 
 export default function EmployeesPage() {
+  const permVersion = usePermVersion()
   const q = useQuery({
-    queryKey: ['employees', 200],
+    queryKey: ['employees', 200, permVersion],
     queryFn: async () =>
       (await apiClient.get('/api/v1/org/directory/page?size=200')).data.data.items as Entry[],
   })
