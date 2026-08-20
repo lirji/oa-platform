@@ -11,7 +11,8 @@ export PATH="/Users/liruijun/personal/devUtils/apache-maven-3.9.12/bin:$PATH"
 
 ## 权威文档
 - 架构 `docs/ARCHITECTURE.md` · 决策 `docs/ADR.md` · 运维与踩坑 `docs/RUNBOOK.md` · 接口 `docs/API.md`
-- 规划与**权威进度** `../docs/plans/oa-platform-0819-1721/`（IMPLEMENTATION_PROGRESS.md 为准）
+- 规划与**权威进度** `docs/plans/oa-platform-0819-1721/`（IMPLEMENTATION_PROGRESS.md 为准）·
+  前端 `docs/plans/oa-console-0820-0500/`（15 步实施计划）
 
 ## 硬约束（违反会被构建或运行期拦下）
 1. 新增 REST handler **必须**带 `@RequiresPerm("oa:模块:动作")` 或 `@PublicApi(reason="...")`，

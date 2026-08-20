@@ -184,4 +184,5 @@ oa-job-service     ★ 跑批与在线争 CPU，故独立
 | [docs/ADR.md](docs/ADR.md) | 决策记录，含**被否掉的方案**与实现期新增的决策 |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | 运维手册：启停、排障、**踩过的坑清单** |
 | [docs/API.md](docs/API.md) | 接口一览与权限点对照 |
-| `../docs/plans/oa-platform-0819-1721/` | 原始规划（FINAL_PLAN 845 行）与**权威进度文件** |
+| `docs/plans/oa-platform-0819-1721/` | 原始规划（FINAL_PLAN 845 行）与**权威进度文件** |
+| `docs/plans/oa-console-0820-0500/` | PC 控制台的决策记录与 15 步实施计划 |
