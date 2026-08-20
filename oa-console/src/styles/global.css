@@ -1,0 +1,279 @@
+:root {
+  --app-content-max: 1440px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #f5f7fa;
+}
+
+/* 内容区容器:居中 + 最大宽 + 响应式边距 */
+.app-content {
+  max-width: var(--app-content-max);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+@media (max-width: 768px) {
+  .app-content {
+    padding: 16px;
+  }
+}
+
+/* 等宽 / 长内容仅局部横向滚动,不触发页面级溢出 */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+.scroll-x {
+  overflow-x: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  font-weight: 700;
+  font-size: 15px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+/* ===================== 登录页(高级视觉) ===================== */
+.oa-login {
+  min-height: 100vh;
+  display: flex;
+  background: #0e1c3a;
+}
+
+/* 左品牌栏:多层渐变 + 光晕 + 流程线稿;桌面显示,<992 纯 CSS 隐藏(不用 JS isMobile) */
+.oa-login-brand {
+  position: relative;
+  flex: 1.12;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 26px;
+  padding: 72px 64px;
+  overflow: hidden;
+  color: #fff;
+  isolation: isolate;
+  background:
+    radial-gradient(1100px 560px at 12% 18%, rgba(79, 110, 247, 0.55), transparent 60%),
+    radial-gradient(820px 460px at 88% 84%, rgba(124, 58, 237, 0.4), transparent 55%),
+    linear-gradient(135deg, #10224a 0%, #1e3a8a 46%, #315efb 100%);
+}
+/* 柔和光晕球,增强景深 */
+.oa-login-brand::before,
+.oa-login-brand::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+  pointer-events: none;
+  z-index: -1;
+}
+.oa-login-brand::before {
+  width: 360px;
+  height: 360px;
+  background: #4f6ef7;
+  opacity: 0.5;
+  top: -90px;
+  right: -60px;
+}
+.oa-login-brand::after {
+  width: 300px;
+  height: 300px;
+  background: #7c3aed;
+  opacity: 0.32;
+  bottom: -70px;
+  left: -50px;
+}
+/* BPMN 流程线稿(SVG),铺在品牌区背景 */
+/*
+ * 品牌区装饰。原版是 BPMN 流程线稿（workflow-console 的语义），
+ * 这里换成【组织树 + 汇报线】的线稿 —— OA 的核心是组织与权限，不是流程图。
+ * 用内联 SVG data-uri 而不是图片文件：省一次请求，且随主题色走。
+ */
+.oa-login-motif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.16;
+  pointer-events: none;
+  z-index: -1;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 620px auto;
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='620' height='420' fill='none' stroke='%23ffffff' stroke-width='1.6'>\
+<rect x='270' y='24' width='80' height='34' rx='8'/>\
+<path d='M310 58 v34 M150 92 h320 M150 92 v26 M310 92 v26 M470 92 v26'/>\
+<rect x='110' y='118' width='80' height='34' rx='8'/>\
+<rect x='270' y='118' width='80' height='34' rx='8'/>\
+<rect x='430' y='118' width='80' height='34' rx='8'/>\
+<path d='M150 152 v26 M70 178 h160 M70 178 v22 M150 178 v22 M230 178 v22'/>\
+<rect x='34' y='200' width='72' height='30' rx='8'/>\
+<rect x='114' y='200' width='72' height='30' rx='8'/>\
+<rect x='194' y='200' width='72' height='30' rx='8'/>\
+<path d='M310 152 v26 M270 178 h80 M270 178 v22 M350 178 v22'/>\
+<rect x='236' y='200' width='68' height='30' rx='8'/>\
+<rect x='316' y='200' width='68' height='30' rx='8'/>\
+<path d='M470 152 v48' stroke-dasharray='5 5'/>\
+<rect x='434' y='200' width='72' height='30' rx='8'/>\
+<circle cx='70' cy='300' r='16'/><circle cx='150' cy='300' r='16'/><circle cx='230' cy='300' r='16'/>\
+<path d='M86 300 h48 M166 300 h48' stroke-dasharray='4 4'/>\
+<path d='M470 246 v40 M430 286 h80' stroke-dasharray='5 5'/>\
+</svg>");
+}
+/* 玻璃拟态徽章 */
+.oa-login-badge {
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+/* 特性 chip */
+.oa-login-feature {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(4px);
+}
+
+/* 右侧认证区 + 卡片 */
+.oa-login-auth {
+  width: 520px;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: #f5f7fa;
+}
+.oa-login-card {
+  width: 100%;
+  max-width: 384px;
+  padding: 40px 36px;
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #edf1f7;
+  box-shadow: 0 24px 64px rgba(16, 32, 72, 0.12);
+  animation: oa-login-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes oa-login-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* 卡片内小徽章 */
+.oa-login-card-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  background: linear-gradient(135deg, #315efb, #4f6ef7);
+  box-shadow: 0 8px 18px rgba(49, 94, 251, 0.35);
+}
+/* SSO 主按钮增强(渐变 + hover 抬升) */
+.oa-login-sso.ant-btn {
+  height: 46px;
+  border: none;
+  font-weight: 600;
+  background: linear-gradient(135deg, #315efb, #4f6ef7);
+  box-shadow: 0 10px 22px rgba(49, 94, 251, 0.32);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.oa-login-sso.ant-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+  box-shadow: 0 14px 28px rgba(49, 94, 251, 0.44);
+}
+.oa-login-sso.ant-btn:active {
+  transform: translateY(0);
+}
+/* 信任条 */
+.oa-login-trust {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #98a2b3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-login-card {
+    animation: none;
+  }
+}
+@media (max-width: 991.98px) {
+  .oa-login-brand {
+    display: none;
+  }
+  .oa-login-auth {
+    flex: 1;
+  }
+}
+@media (max-width: 767.98px) {
+  .oa-login-auth {
+    padding: 16px;
+  }
+  .oa-login-card {
+    padding: 32px 22px;
+  }
+}
+
+/* bpmn 只读容器 + 流程状态高亮(节点描边取语义色) */
+.bpmn-canvas {
+  background: #fff;
+  border-radius: 8px;
+}
+
+.wf-active:not(.djs-connection) .djs-visual > :nth-child(1) {
+  stroke: #315efb !important;
+  stroke-width: 2.5px !important;
+  fill: #eef3ff !important;
+}
+
+.wf-completed:not(.djs-connection) .djs-visual > :nth-child(1) {
+  stroke: #16a36a !important;
+  stroke-width: 2px !important;
+}
+
+.wf-incident:not(.djs-connection) .djs-visual > :nth-child(1) {
+  stroke: #d92d20 !important;
+  stroke-width: 2.5px !important;
+  fill: #fef3f2 !important;
+}

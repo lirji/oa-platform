@@ -1,0 +1,10 @@
+{
+  "super":    "seed-user-1",
+  "hr":       "seed-user-2",
+  "manager":  "seed-user-65",
+  "employee": "seed-user-10000",
+  "noPerm":   "e2e-no-perm",
+  "inheritedOrgId": 271,
+  "orgs": 3000,
+  "employees": 10000
+}
