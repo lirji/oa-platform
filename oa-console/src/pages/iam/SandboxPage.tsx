@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, AutoComplete, Badge, Button, Card, Col, Descriptions, Empty, Grid, Input,
+  Alert, AutoComplete, Badge, Button, Card, Col, Descriptions, Empty, Input,
   Row, Space, Statistic, Tag, Timeline, Tooltip, Typography,
 } from 'antd'
 import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons'
@@ -11,6 +11,7 @@ import { PageHeader } from '../../components/layout/PageHeader'
 import { PageSkeleton, ErrorState } from '../../components/common/AsyncState'
 import { useSearchParams } from 'react-router-dom'
 import { colors } from '../../theme/colors'
+import { useAppBreakpoint } from '../../hooks/useAppBreakpoint'
 
 /** 一条授权来源。后端 `/iam/admin/why` 返回，已是 camelCase 类型化 record。 */
 interface PermSource {
@@ -36,17 +37,17 @@ interface PermSource {
  */
 export default function SandboxPage() {
   const [sp, setSp] = useSearchParams()
-  const screens = Grid.useBreakpoint()
+  const bp = useAppBreakpoint()
   const userId = sp.get('userId') ?? ''
   const permCode = sp.get('permCode') ?? 'oa:employee:view'
   const [draftUser, setDraftUser] = useState(userId)
 
   // C 档（1280–1439，1366×768 落这里）：右栏收起为可展开面板
-  const narrow = !screens.xxl
-  // ★ Grid.useBreakpoint() 首次渲染返回 {} —— 所有断点都是 undefined。
-  //   直接用 useState(!narrow) 会把初值定死在"未解析"那一帧上，
-  //   等断点真的解析出来时状态已经不再跟随，表现是右栏永远不出现、
-  //   而"展开预览"按钮也因为 narrow 变了而消失 —— 两头都没有，最难查的那种。
+  // C 档起右栏收起为可展开面板（B 档 1440–1599 仍是三栏并排 ——
+  // 原来的 `!screens.xxl` 把 B 档也算成窄屏了，见 useAppBreakpoint 的注释）。
+  const narrow = bp.inspectorMode !== 'inline'
+  // 初值仍取 false + useEffect 跟随：hook 首帧就给出正确档位，
+  // 这个 effect 只负责"用户没手动切过时跟着档位走"这一条语义。
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [userToggled, setUserToggled] = useState(false)
   useEffect(() => {

@@ -7,6 +7,7 @@ import { normalizeError } from '@oa/shared/api/errors'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
 import { useElevationFlow } from '../../auth/useElevationFlow'
+import { useAppBreakpoint } from '../../hooks/useAppBreakpoint'
 
 interface AuditRow {
   id: number; actorId: string | null; actorName: string | null; onBehalfOf: string | null
@@ -23,6 +24,8 @@ export default function AuditPage() {
   const { message } = App.useApp()
   const elevate = useElevationFlow()
   const [filters, setFilters] = useState<{ actorId?: string; deniedOnly?: boolean }>({})
+  // C 档起一页 10 条：1366×768 下可用高度只剩 ~620px，20 条要滚两屏才够得着分页器。
+  const bp = useAppBreakpoint()
 
   const q = useQuery({
     queryKey: ['audit', filters],
@@ -87,7 +90,7 @@ export default function AuditPage() {
       </Card>
       <DataCard query={q} data={q.data} emptyText="没有匹配的审计记录">
         {(rows) => <Table rowKey="id" columns={cols} dataSource={rows}
-          pagination={{ pageSize: 20 }} scroll={{ x: 1080 }} size="middle" />}
+          pagination={{ pageSize: bp.tablePageSize }} scroll={{ x: 1080 }} size="middle" />}
       </DataCard>
       {elevate.dialog}
     </>

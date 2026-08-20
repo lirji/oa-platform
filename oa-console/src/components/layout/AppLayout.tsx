@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Avatar, Alert, Breadcrumb, Button, Drawer, Dropdown, Grid, Layout, Menu, Space, Tag, Tooltip } from 'antd'
+import { Avatar, Alert, Breadcrumb, Button, Drawer, Dropdown, Layout, Menu, Space, Tag, Tooltip } from 'antd'
 import {
   ClusterOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined,
   SafetyCertificateOutlined, UserOutlined,
@@ -10,6 +10,7 @@ import { config } from '@oa/shared/config'
 import type { MenuNode } from '@oa/shared/perm/types'
 import { useAuthStore } from '../../store/authStore'
 import { usePerm } from '../../auth/usePerm'
+import { useAppBreakpoint } from '../../hooks/useAppBreakpoint'
 import { colors } from '../../theme/colors'
 import { menuIcon } from './menuIcons'
 
@@ -30,14 +31,17 @@ export default function AppLayout() {
   const username = useAuthStore((s) => s.username)
   const perm = usePerm()
 
-  const screens = Grid.useBreakpoint()
-  const isMobile = !screens.lg
-  // ★ C 档（1280–1439，1366×768 落这里）默认折叠侧栏：
-  //   1366 宽下展开的 224px 侧栏白吃 152px，而那一档的可用高度本就只剩 ~620px。
-  const narrowDesktop = !screens.xxl && !isMobile
-  const [collapsed, setCollapsed] = useState(narrowDesktop)
+  // 档位判定统一走 useAppBreakpoint()（计划 §7 的六档表），不再用 antd 的断点拼。
+  // ★ 这里原本写的是 `!screens.xxl`，而 xxl=1600 —— 它把整个 B 档（1440–1599）
+  //   也算成窄屏，1440 的屏幕白白损失一个展开的侧栏。antd 没有 1440 这一档，
+  //   §7 要求单独做这个 hook 就是为了这件事。
+  const bp = useAppBreakpoint()
+  const isMobile = bp.siderMode === 'drawer'
+  // C 档（1280–1439，1366×768 落这里）默认折叠：224px 侧栏白吃 152px，
+  // 而那一档的可用高度本就只剩 ~620px。D 档则锁死折叠，不给切换。
+  const [collapsed, setCollapsed] = useState(bp.siderMode === 'collapsed')
   const [drawerOpen, setDrawerOpen] = useState(false)
-  useEffect(() => { setCollapsed(narrowDesktop) }, [narrowDesktop])
+  useEffect(() => { setCollapsed(bp.siderMode === 'collapsed') }, [bp.siderMode])
 
   const items = useMemo(() => toItems(perm.menus ?? []), [perm.menus])
   const current = useMemo(
@@ -114,6 +118,8 @@ export default function AppLayout() {
               type="text"
               aria-label={isMobile ? '打开菜单' : collapsed ? '展开菜单' : '收起菜单'}
               icon={isMobile ? <MenuOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              // D 档（992–1279）强制折叠：展开 224px 会把内容区挤到没法用。
+              disabled={bp.siderLocked}
               onClick={() => (isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed))}
             />
             <Breadcrumb items={[{ title: 'OA' }, { title: current?.name ?? '' }]} />
