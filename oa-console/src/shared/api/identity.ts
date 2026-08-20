@@ -32,6 +32,11 @@ export function devIdentity(getUser: () => string): IdentityAdapter {
   return {
     name: 'DEV(X-OA-User)',
     async apply(cfg) {
+      // ★ 调用方显式传了身份就不要覆盖 —— 权限沙盘要"以他人身份"查可见行数，
+      //   拦截器无脑覆盖会让它量到【当前登录者】的数字。
+      //   那个数字看起来完全合理（就是一个人数），却是错的，
+      //   而这一页存在的全部意义就是解释"这个人到底能看到什么"。
+      if (cfg.headers['X-OA-User']) return true
       const u = getUser()
       if (!u) return false
       cfg.headers['X-OA-User'] = u
