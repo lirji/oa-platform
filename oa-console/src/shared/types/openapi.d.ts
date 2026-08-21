@@ -623,6 +623,70 @@ export type paths = {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/iam/abac/conditions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["list_2"];
+        readonly put?: never;
+        readonly post: operations["create_3"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/abac/conditions/{id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put: operations["update_3"];
+        readonly post?: never;
+        readonly delete: operations["delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/abac/conditions/{id}/enabled": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post: operations["enabled_1"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/abac/validate": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post: operations["validate"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/iam/admin/bench": {
         readonly parameters: {
             readonly query?: never;
@@ -790,7 +854,7 @@ export type paths = {
             readonly path?: never;
             readonly cookie?: never;
         };
-        readonly get: operations["list"];
+        readonly get: operations["list_1"];
         readonly put?: never;
         readonly post: operations["grant"];
         readonly delete?: never;
@@ -810,6 +874,86 @@ export type paths = {
         readonly put?: never;
         readonly post?: never;
         readonly delete: operations["revoke"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/groups": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["list"];
+        readonly put?: never;
+        readonly post: operations["create_2"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/groups/{id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put: operations["update_2"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/groups/{id}/enabled": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post: operations["enabled"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/groups/{id}/members": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["members"];
+        readonly put?: never;
+        readonly post: operations["addMembers"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/iam/groups/{id}/members/{userId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete: operations["removeMember"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -1119,22 +1263,6 @@ export type paths = {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v1/org/seed": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        readonly post: operations["seed"];
-        readonly delete: operations["truncate"];
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/api/v1/org/units": {
         readonly parameters: {
             readonly query?: never;
@@ -1411,6 +1539,15 @@ export type paths = {
 export type webhooks = Record<string, never>;
 export type components = {
     schemas: {
+        readonly AbacCondition: {
+            readonly description?: string;
+            readonly enabled?: boolean;
+            readonly expression: string;
+            /** Format: int64 */
+            readonly permissionId: number;
+            /** Format: int64 */
+            readonly roleId: number;
+        };
         readonly AddAssignment: {
             readonly asLeader?: boolean;
             readonly assignmentType: string;
@@ -1420,6 +1557,13 @@ export type components = {
             readonly positionId?: number;
             /** Format: date */
             readonly validFrom?: string;
+        };
+        readonly AddGroupMembers: {
+            readonly userIds: readonly string[];
+            /** Format: date-time */
+            readonly validFrom?: string;
+            /** Format: date-time */
+            readonly validTo?: string;
         };
         readonly AssetView: {
             readonly assetNo?: string;
@@ -1516,6 +1660,11 @@ export type components = {
             /** Format: int64 */
             readonly primaryPositionId?: number;
             readonly userId: string;
+        };
+        readonly CreateGroup: {
+            readonly code: string;
+            readonly description?: string;
+            readonly name: string;
         };
         readonly CreateKbDoc: {
             readonly body?: string;
@@ -1880,6 +2029,27 @@ export type components = {
             readonly status?: string;
             readonly type?: string;
         };
+        readonly PermissionCondition: {
+            /** Format: date-time */
+            readonly createdAt?: string;
+            readonly createdBy?: string;
+            /** Format: date-time */
+            readonly deletedAt?: string;
+            readonly description?: string;
+            readonly enabled?: boolean;
+            readonly expression?: string;
+            /** Format: int64 */
+            readonly id?: number;
+            /** Format: int64 */
+            readonly permissionId?: number;
+            /** Format: int64 */
+            readonly roleId?: number;
+            /** Format: int64 */
+            readonly tenantId?: number;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+            readonly updatedBy?: string;
+        };
         readonly PermissionView: {
             readonly code?: string;
             readonly enabled?: boolean;
@@ -2055,6 +2225,13 @@ export type components = {
             readonly message?: string;
             readonly traceId?: string;
         };
+        readonly ResultListPermissionCondition: {
+            /** Format: int32 */
+            readonly code?: number;
+            readonly data?: readonly components["schemas"]["PermissionCondition"][];
+            readonly message?: string;
+            readonly traceId?: string;
+        };
         readonly ResultListPermissionView: {
             /** Format: int32 */
             readonly code?: number;
@@ -2097,6 +2274,20 @@ export type components = {
             readonly message?: string;
             readonly traceId?: string;
         };
+        readonly ResultListUserGroup: {
+            /** Format: int32 */
+            readonly code?: number;
+            readonly data?: readonly components["schemas"]["UserGroup"][];
+            readonly message?: string;
+            readonly traceId?: string;
+        };
+        readonly ResultListUserGroupMember: {
+            /** Format: int32 */
+            readonly code?: number;
+            readonly data?: readonly components["schemas"]["UserGroupMember"][];
+            readonly message?: string;
+            readonly traceId?: string;
+        };
         readonly ResultListVisitorView: {
             /** Format: int32 */
             readonly code?: number;
@@ -2109,6 +2300,24 @@ export type components = {
             readonly code?: number;
             /** Format: int64 */
             readonly data?: number;
+            readonly message?: string;
+            readonly traceId?: string;
+        };
+        readonly ResultMapStringBoolean: {
+            /** Format: int32 */
+            readonly code?: number;
+            readonly data?: {
+                readonly [key: string]: boolean;
+            };
+            readonly message?: string;
+            readonly traceId?: string;
+        };
+        readonly ResultMapStringInteger: {
+            /** Format: int32 */
+            readonly code?: number;
+            readonly data?: {
+                readonly [key: string]: number;
+            };
             readonly message?: string;
             readonly traceId?: string;
         };
@@ -2158,13 +2367,6 @@ export type components = {
             readonly message?: string;
             readonly traceId?: string;
         };
-        readonly ResultSeedResult: {
-            /** Format: int32 */
-            readonly code?: number;
-            readonly data?: components["schemas"]["SeedResult"];
-            readonly message?: string;
-            readonly traceId?: string;
-        };
         readonly ResultVoid: {
             /** Format: int32 */
             readonly code?: number;
@@ -2192,22 +2394,6 @@ export type components = {
             readonly location?: string;
             readonly name?: string;
             readonly status?: string;
-        };
-        readonly SeedResult: {
-            /** Format: int32 */
-            readonly assignments?: number;
-            /** Format: int32 */
-            readonly closureRows?: number;
-            /** Format: int64 */
-            readonly elapsedMs?: number;
-            /** Format: int32 */
-            readonly employees?: number;
-            /** Format: int32 */
-            readonly maxDepth?: number;
-            /** Format: int32 */
-            readonly orgs?: number;
-            /** Format: int32 */
-            readonly reportingLines?: number;
         };
         readonly SetReportingLine: {
             /** Format: int64 */
@@ -2290,6 +2476,10 @@ export type components = {
             readonly mobile?: string;
             readonly name?: string;
         };
+        readonly UpdateGroup: {
+            readonly description?: string;
+            readonly name: string;
+        };
         readonly UpdateOrg: {
             readonly costCenter?: string;
             readonly deputyLeaderUserId?: string;
@@ -2300,6 +2490,44 @@ export type components = {
             /** Format: int32 */
             readonly sortOrder?: number;
             readonly type?: string;
+        };
+        readonly UserGroup: {
+            readonly code?: string;
+            /** Format: date-time */
+            readonly createdAt?: string;
+            readonly createdBy?: string;
+            readonly description?: string;
+            /** Format: int64 */
+            readonly id?: number;
+            readonly name?: string;
+            readonly status?: string;
+            /** Format: int64 */
+            readonly tenantId?: number;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+            readonly updatedBy?: string;
+        };
+        readonly UserGroupMember: {
+            /** Format: date-time */
+            readonly createdAt?: string;
+            readonly createdBy?: string;
+            /** Format: int64 */
+            readonly groupId?: number;
+            /** Format: int64 */
+            readonly id?: number;
+            /** Format: date-time */
+            readonly revokedAt?: string;
+            readonly revokedBy?: string;
+            /** Format: int64 */
+            readonly tenantId?: number;
+            readonly userId?: string;
+            /** Format: date-time */
+            readonly validFrom?: string;
+            /** Format: date-time */
+            readonly validTo?: string;
+        };
+        readonly ValidateAbac: {
+            readonly expression: string;
         };
         readonly VisitorView: {
             readonly company?: string;
@@ -3294,6 +3522,149 @@ export interface operations {
             };
         };
     };
+    readonly list_2: {
+        readonly parameters: {
+            readonly query?: {
+                readonly permissionId?: number;
+                readonly roleId?: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultListPermissionCondition"];
+                };
+            };
+        };
+    };
+    readonly create_3: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AbacCondition"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultLong"];
+                };
+            };
+        };
+    };
+    readonly update_3: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AbacCondition"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultVoid"];
+                };
+            };
+        };
+    };
+    readonly delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultVoid"];
+                };
+            };
+        };
+    };
+    readonly enabled_1: {
+        readonly parameters: {
+            readonly query: {
+                readonly enabled: boolean;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultVoid"];
+                };
+            };
+        };
+    };
+    readonly validate: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ValidateAbac"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultMapStringBoolean"];
+                };
+            };
+        };
+    };
     readonly bench: {
         readonly parameters: {
             readonly query: {
@@ -3538,7 +3909,7 @@ export interface operations {
             };
         };
     };
-    readonly list: {
+    readonly list_1: {
         readonly parameters: {
             readonly query: {
                 readonly subjectId: string;
@@ -3593,6 +3964,173 @@ export interface operations {
             readonly header?: never;
             readonly path: {
                 readonly grantId: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultVoid"];
+                };
+            };
+        };
+    };
+    readonly list: {
+        readonly parameters: {
+            readonly query?: {
+                readonly status?: string;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultListUserGroup"];
+                };
+            };
+        };
+    };
+    readonly create_2: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateGroup"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultLong"];
+                };
+            };
+        };
+    };
+    readonly update_2: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["UpdateGroup"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultVoid"];
+                };
+            };
+        };
+    };
+    readonly enabled: {
+        readonly parameters: {
+            readonly query: {
+                readonly enabled: boolean;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultVoid"];
+                };
+            };
+        };
+    };
+    readonly members: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultListUserGroupMember"];
+                };
+            };
+        };
+    };
+    readonly addMembers: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AddGroupMembers"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultMapStringInteger"];
+                };
+            };
+        };
+    };
+    readonly removeMember: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly id: number;
+                readonly userId: string;
             };
             readonly cookie?: never;
         };
@@ -4043,49 +4581,6 @@ export interface operations {
                 };
                 content: {
                     readonly "*/*": components["schemas"]["ResultListString"];
-                };
-            };
-        };
-    };
-    readonly seed: {
-        readonly parameters: {
-            readonly query?: {
-                readonly employees?: number;
-                readonly orgs?: number;
-            };
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "*/*": components["schemas"]["ResultSeedResult"];
-                };
-            };
-        };
-    };
-    readonly truncate: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "*/*": components["schemas"]["ResultVoid"];
                 };
             };
         };

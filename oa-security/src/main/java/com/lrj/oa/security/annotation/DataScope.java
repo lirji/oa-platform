@@ -16,6 +16,12 @@ import java.lang.annotation.*;
 @Documented
 public @interface DataScope {
 
+    /** 本次数据范围归属的权限点，必须同时通过接口判权。 */
+    String permission();
+
+    /** 需要保护的主表或视图全名，如 {@code oa_org.v_employee_directory}。 */
+    String table();
+
     /** SQL 中目标表的别名，如 {@code t}。 */
     String alias() default "t";
 

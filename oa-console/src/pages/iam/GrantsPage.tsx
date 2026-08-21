@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Button, Card, Col, Form, Input, Popconfirm, Row, Select, Space, Table, Tag } from 'antd'
+import { App, Button, Card, Col, Form, Input, Popconfirm, Row, Select, Space, Table, Tabs, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@oa/shared/api/client'
@@ -7,7 +7,8 @@ import { errText } from '@oa/shared/api/errors'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
 import Can from '../../auth/Can'
-import { usePermVersion } from '../../auth/usePerm'
+import { usePerm, usePermVersion } from '../../auth/usePerm'
+import { AbacPanel, UserGroupsPanel, type UserGroup } from './IamPolicyPanels'
 
 interface Role { id: number; code: string; name: string; defaultScope: string }
 interface GrantRecord {
@@ -20,9 +21,11 @@ const GRANTS_KEY = 'iam-grants'
 
 export default function GrantsPage() {
   const permVersion = usePermVersion()
+  const perm = usePerm()
   const { message } = App.useApp()
   const qc = useQueryClient()
   const [form] = Form.useForm()
+  const selectedSubjectType = Form.useWatch('subjectType', form)
   // ★ 后端 GET /iam/grants 要求 subjectType + subjectId 【都必填】，
   //   所以这一页只能是"先选主体，再看他的授权"，做不了"列出全部授权"。
   const [subject, setSubject] = useState<{ type: string; id: string } | null>(null)
@@ -31,6 +34,12 @@ export default function GrantsPage() {
     queryKey: ['iam-roles'],
     queryFn: async () => (await apiClient.get('/api/v1/iam/roles')).data.data as Role[],
     staleTime: 5 * 60_000,
+  })
+
+  const groups = useQuery({
+    queryKey: ['iam-user-groups', permVersion],
+    queryFn: async () => (await apiClient.get('/api/v1/iam/groups?status=ACTIVE')).data.data as UserGroup[],
+    enabled: selectedSubjectType === 'USER_GROUP',
   })
 
   const grants = useQuery({
@@ -91,8 +100,10 @@ export default function GrantsPage() {
 
   return (
     <>
-      <PageHeader title="授权管理" description="先选一个主体（人或部门），再查看与调整它的授权" />
-      <Row gutter={16}>
+      <PageHeader title="权限策略" description="统一管理主体授权、用户组和 ABAC 条件策略" />
+      <Tabs items={[
+        {
+          key: 'grants', label: '主体授权', children: <Row gutter={16}>
         <Col xs={24} lg={9}>
           <Card size="small" title="选择主体 / 新增授权">
             <Form form={form} layout="vertical" onFinish={(v) => {
@@ -103,11 +114,21 @@ export default function GrantsPage() {
                 <Select options={[
                   { value: 'USER', label: '用户' },
                   { value: 'ORG_UNIT', label: '组织（可含下级）' },
+                  { value: 'POSITION', label: '岗位' },
+                  { value: 'USER_GROUP', label: '用户组' },
                 ]} />
               </Form.Item>
-              <Form.Item name="subjectId" label="主体 id" rules={[{ required: true, message: '必填' }]}>
-                <Input placeholder="用户 id 或组织 id" />
-              </Form.Item>
+              {selectedSubjectType === 'USER_GROUP' ? (
+                <Form.Item name="subjectId" label="用户组" rules={[{ required: true, message: '必填' }]}>
+                  <Select loading={groups.isLoading} showSearch optionFilterProp="label"
+                    placeholder="选择一个已启用用户组"
+                    options={(groups.data ?? []).map((g) => ({ value: String(g.id), label: `${g.name}（${g.code}）` }))} />
+                </Form.Item>
+              ) : (
+                <Form.Item name="subjectId" label="主体 id" rules={[{ required: true, message: '必填' }]}>
+                  <Input placeholder={selectedSubjectType === 'POSITION' ? '岗位 id' : '用户 id 或组织 id'} />
+                </Form.Item>
+              )}
               <Form.Item name="roleId" label="授予角色（留空则只查询）">
                 <Select allowClear loading={roles.isLoading}
                   options={(roles.data ?? []).map((r) => ({
@@ -134,7 +155,13 @@ export default function GrantsPage() {
             )}
           </DataCard>
         </Col>
-      </Row>
+      </Row>,
+        },
+        ...(perm.has('oa:iam:admin') ? [
+          { key: 'groups', label: '用户组', children: <UserGroupsPanel /> },
+          { key: 'abac', label: 'ABAC 条件', children: <AbacPanel /> },
+        ] : []),
+      ]} />
     </>
   )
 }

@@ -15,6 +15,9 @@ public interface RoleMapper extends BaseMapper<Role> {
     @Select("SELECT * FROM oa_iam.role WHERE tenant_id = #{tenantId} AND code = #{code}")
     Role selectByCode(@Param("tenantId") Long tenantId, @Param("code") String code);
 
+    @Select("SELECT * FROM oa_iam.role WHERE tenant_id=#{tenantId} AND id=#{id}")
+    Role selectTenantById(@Param("tenantId") long tenantId, @Param("id") long id);
+
     /**
      * 角色继承展开：给定被授予的角色，返回它<b>及其全部后代角色</b>所含的权限点。
      *
@@ -33,4 +36,16 @@ public interface RoleMapper extends BaseMapper<Role> {
             </script>
             """)
     List<RolePermissionRow> selectPermissionsOfRoles(@Param("roleIds") Collection<Long> roleIds);
+
+    @Select("""
+            SELECT count(*) > 0
+              FROM oa_iam.role r
+              JOIN oa_iam.role_inherit ri ON ri.ancestor_role_id=r.id
+              JOIN oa_iam.role_permission rp ON rp.role_id=ri.descendant_role_id
+             WHERE r.tenant_id=#{tenantId} AND ri.ancestor_role_id=#{roleId}
+               AND rp.permission_id=#{permissionId}
+            """)
+    boolean roleIncludesPermission(@Param("tenantId") long tenantId,
+                                   @Param("roleId") long roleId,
+                                   @Param("permissionId") long permissionId);
 }

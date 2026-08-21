@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:8400",
+      "url": "http://127.0.0.1:18406",
       "description": "Generated server url"
     }
   ],
@@ -233,6 +233,117 @@
         }
       }
     },
+    "/api/v1/iam/groups/{id}": {
+      "put": {
+        "tags": [
+          "user-group-controller"
+        ],
+        "operationId": "update_2",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultVoid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/iam/abac/conditions/{id}": {
+      "put": {
+        "tags": [
+          "abac-policy-controller"
+        ],
+        "operationId": "update_3",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbacCondition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultVoid"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "abac-policy-controller"
+        ],
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultVoid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/doc/kb/{id}": {
       "get": {
         "tags": [
@@ -380,66 +491,6 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ResultListString"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/org/seed": {
-      "post": {
-        "tags": [
-          "org-seed-controller"
-        ],
-        "operationId": "seed",
-        "parameters": [
-          {
-            "name": "orgs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 3000
-            }
-          },
-          {
-            "name": "employees",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 10000
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResultSeedResult"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "org-seed-controller"
-        ],
-        "operationId": "truncate",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResultVoid"
                 }
               }
             }
@@ -599,12 +650,179 @@
         }
       }
     },
+    "/api/v1/iam/groups": {
+      "get": {
+        "tags": [
+          "user-group-controller"
+        ],
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultListUserGroup"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "user-group-controller"
+        ],
+        "operationId": "create_2",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultLong"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/iam/groups/{id}/members": {
+      "get": {
+        "tags": [
+          "user-group-controller"
+        ],
+        "operationId": "members",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultListUserGroupMember"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "user-group-controller"
+        ],
+        "operationId": "addMembers",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddGroupMembers"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultMapStringInteger"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/iam/groups/{id}/enabled": {
+      "post": {
+        "tags": [
+          "user-group-controller"
+        ],
+        "operationId": "enabled",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultVoid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/iam/grants": {
       "get": {
         "tags": [
           "grant-controller"
         ],
-        "operationId": "list",
+        "operationId": "list_1",
         "parameters": [
           {
             "name": "subjectType",
@@ -768,6 +986,143 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ResultMapStringObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/iam/abac/validate": {
+      "post": {
+        "tags": [
+          "abac-policy-controller"
+        ],
+        "operationId": "validate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateAbac"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultMapStringBoolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/iam/abac/conditions": {
+      "get": {
+        "tags": [
+          "abac-policy-controller"
+        ],
+        "operationId": "list_2",
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "permissionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultListPermissionCondition"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "abac-policy-controller"
+        ],
+        "operationId": "create_3",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbacCondition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultLong"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/iam/abac/conditions/{id}/enabled": {
+      "post": {
+        "tags": [
+          "abac-policy-controller"
+        ],
+        "operationId": "enabled_1",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultVoid"
                 }
               }
             }
@@ -2998,6 +3353,45 @@
         }
       }
     },
+    "/api/v1/iam/groups/{id}/members/{userId}": {
+      "delete": {
+        "tags": [
+          "user-group-controller"
+        ],
+        "operationId": "removeMember",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultVoid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/iam/grants/{grantId}": {
       "delete": {
         "tags": [
@@ -3175,6 +3569,47 @@
           }
         }
       },
+      "UpdateGroup": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "AbacCondition": {
+        "required": [
+          "expression",
+          "permissionId",
+          "roleId"
+        ],
+        "type": "object",
+        "properties": {
+          "roleId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "permissionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expression": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
       "CreateKbDoc": {
         "required": [
           "title"
@@ -3276,57 +3711,6 @@
           },
           "traceId": {
             "type": "string"
-          }
-        }
-      },
-      "ResultSeedResult": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "message": {
-            "type": "string"
-          },
-          "data": {
-            "$ref": "#/components/schemas/SeedResult"
-          },
-          "traceId": {
-            "type": "string"
-          }
-        }
-      },
-      "SeedResult": {
-        "type": "object",
-        "properties": {
-          "orgs": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "closureRows": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "employees": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "assignments": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "reportingLines": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "maxDepth": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "elapsedMs": {
-            "type": "integer",
-            "format": "int64"
           }
         }
       },
@@ -3439,6 +3823,68 @@
           "validFrom": {
             "type": "string",
             "format": "date"
+          }
+        }
+      },
+      "CreateGroup": {
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "AddGroupMembers": {
+        "required": [
+          "userIds"
+        ],
+        "type": "object",
+        "properties": {
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ResultMapStringInteger": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "traceId": {
+            "type": "string"
           }
         }
       },
@@ -3563,6 +4009,38 @@
             "type": "object",
             "additionalProperties": {
               "type": "object"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidateAbac": {
+        "required": [
+          "expression"
+        ],
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string"
+          }
+        }
+      },
+      "ResultMapStringBoolean": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
             }
           },
           "traceId": {
@@ -4644,6 +5122,129 @@
           }
         }
       },
+      "ResultListUserGroup": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserGroup"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "UserGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tenantId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ResultListUserGroupMember": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserGroupMember"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "UserGroupMember": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tenantId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "groupId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedBy": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "GrantRecord": {
         "type": "object",
         "properties": {
@@ -4852,6 +5453,75 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Delegation"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "PermissionCondition": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tenantId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roleId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "permissionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expression": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ResultListPermissionCondition": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionCondition"
             }
           },
           "traceId": {

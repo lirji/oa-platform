@@ -45,13 +45,14 @@ public class GrantService {
     private final InvalidationBus bus;
     private final ObjectMapper json;
     private final int maxElevationHours;
+    private final UserGroupMapper userGroupMapper;
     /** 只给来源链解释用。判权热路径一行 SQL 都不许有（P99 = 1.25μs 就是这么来的）。 */
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public GrantService(GrantMapper grantMapper, RoleMapper roleMapper, DelegationMapper delegationMapper,
                         PermVersionMapper versionMapper, PermissionEngine engine,
                         ObjectProvider<InvalidationBus> busProvider, ObjectMapper json,
-                        org.springframework.jdbc.core.JdbcTemplate jdbc,
+                        org.springframework.jdbc.core.JdbcTemplate jdbc, UserGroupMapper userGroupMapper,
                         @Value("${oa.iam.elevation.max-hours:8}") int maxElevationHours) {
         this.jdbc = jdbc;
         this.grantMapper = grantMapper;
@@ -62,6 +63,7 @@ public class GrantService {
         this.bus = busProvider.getIfAvailable();
         this.json = json;
         this.maxElevationHours = maxElevationHours;
+        this.userGroupMapper = userGroupMapper;
     }
 
     // ───────────────────────────────────────────── 授权
@@ -69,8 +71,20 @@ public class GrantService {
     @Transactional
     public Long grant(IamCommands.Grant cmd) {
         SubjectType subjectType = parseSubject(cmd.subjectType());
-        if (roleMapper.selectById(cmd.roleId()) == null) {
+        if (roleMapper.selectTenantById(TenantContext.get(), cmd.roleId()) == null) {
             throw BusinessException.of(ResultCode.NOT_FOUND, "角色不存在: " + cmd.roleId());
+        }
+        if (subjectType == SubjectType.USER_GROUP) {
+            Long groupId;
+            try { groupId = Long.valueOf(cmd.subjectId()); }
+            catch (NumberFormatException e) {
+                throw BusinessException.of(ResultCode.BAD_REQUEST, "USER_GROUP subjectId 必须是用户组 id");
+            }
+            UserGroup group = userGroupMapper.selectTenantGroup(TenantContext.get(), groupId);
+            if (group == null) throw BusinessException.of(ResultCode.NOT_FOUND, "用户组不存在: " + groupId);
+            if (!"ACTIVE".equals(group.getStatus())) {
+                throw BusinessException.of(ResultCode.CONFLICT, "不能给已禁用用户组授权");
+            }
         }
         GrantType grantType = cmd.grantType() == null ? GrantType.PERMANENT : parseGrantType(cmd.grantType());
         if (grantType == GrantType.TEMPORARY && cmd.validTo() == null) {
@@ -297,7 +311,7 @@ public class GrantService {
                              String grantType, String scopeType, Boolean includeDescendants,
                              java.time.OffsetDateTime validTo, String reason,
                              String grantedBy, java.time.OffsetDateTime grantedAt,
-                             String via, String rolePath) {}
+                             String via, String rolePath, String abacExpression) {}
 
     public java.util.List<PermSource> explainSources(String userId, String permCode) {
         // 一次查完：直接授权（USER）+ 组织授权（ORG_UNIT，按 org_path 前缀继承）+ 岗位授权。
@@ -317,6 +331,14 @@ public class GrantService {
                       JOIN oa_org.employee_org_assignment a
                         ON a.employee_id = e.id AND a.valid_to IS NULL
                      WHERE e.user_id = ? AND a.position_id IS NOT NULL
+                ),
+                my_groups AS (
+                    SELECT g.id, g.name
+                      FROM oa_iam.user_group_member gm
+                      JOIN oa_iam.user_group g ON g.id=gm.group_id AND g.tenant_id=gm.tenant_id
+                     WHERE gm.user_id=? AND gm.tenant_id=? AND gm.revoked_at IS NULL
+                       AND g.status='ACTIVE' AND gm.valid_from<=now()
+                       AND (gm.valid_to IS NULL OR gm.valid_to>now())
                 )
                 SELECT g.id                AS grant_id,
                        g.subject_type      AS subject_type,
@@ -336,10 +358,16 @@ public class GrantService {
                          WHEN g.subject_type = 'ORG_UNIT'  THEN '所在组织「' || coalesce(og.name, g.subject_id) || '」被授权'
                                                                 || CASE WHEN g.include_descendants THEN '（含下级，按 org_path 前缀继承）' ELSE '' END
                          WHEN g.subject_type = 'POSITION'  THEN '所任岗位被授权'
+                         WHEN g.subject_type = 'USER_GROUP' THEN '所在用户组「' || coalesce(ug.name, g.subject_id) || '」被授权'
                          ELSE g.subject_type
                        END AS via,
                        CASE WHEN ri.distance = 0 THEN '该角色直接包含此权限'
-                            ELSE '经角色继承（向上 ' || ri.distance || ' 层）获得' END AS role_path
+                            ELSE '经角色继承（向上 ' || ri.distance || ' 层）获得' END AS role_path,
+                       (SELECT string_agg(pc.expression, ' AND ' ORDER BY pc.id)
+                         FROM oa_iam.permission_condition pc
+                         WHERE pc.tenant_id=g.tenant_id
+                           AND pc.role_id=g.role_id AND pc.permission_id=p.id
+                           AND pc.enabled AND pc.deleted_at IS NULL) AS abac_expression
                   FROM oa_iam.grant_record g
                   JOIN oa_iam.role_inherit ri ON ri.ancestor_role_id = g.role_id
                   JOIN oa_iam.role_permission rp ON rp.role_id = ri.descendant_role_id
@@ -351,6 +379,8 @@ public class GrantService {
                   --   优化器仍可能先算那个转换。反过来转就没有任何一行会失败。
                   LEFT JOIN oa_org.org_unit og
                          ON g.subject_type = 'ORG_UNIT' AND og.id::text = g.subject_id
+                  LEFT JOIN my_groups ug
+                         ON g.subject_type = 'USER_GROUP' AND ug.id::text = g.subject_id
                  WHERE g.revoked_at IS NULL
                    AND (g.valid_to IS NULL OR g.valid_to > now())
                    AND (
@@ -361,6 +391,7 @@ public class GrantService {
                                 OR (NOT g.include_descendants AND m.org_id = og.id)))
                      OR (g.subject_type = 'POSITION' AND EXISTS (
                             SELECT 1 FROM my_positions mp WHERE mp.position_id::text = g.subject_id))
+                     OR (g.subject_type = 'USER_GROUP' AND ug.id IS NOT NULL)
                    )
                  ORDER BY g.id
                 """, (rs, i) -> new PermSource(
@@ -372,7 +403,7 @@ public class GrantService {
                         rs.getObject("valid_to", java.time.OffsetDateTime.class),
                         rs.getString("reason"), rs.getString("granted_by"),
                         rs.getObject("granted_at", java.time.OffsetDateTime.class),
-                        rs.getString("via"), rs.getString("role_path")),
-                userId, userId, permCode, userId);
+                        rs.getString("via"), rs.getString("role_path"), rs.getString("abac_expression")),
+                userId, userId, userId, TenantContext.get(), permCode, userId);
     }
 }

@@ -1,0 +1,22 @@
+# 迁移期已知请求路径 JDBC 债务；只允许减少，新增条目必须经过安全评审。
+oa-admin-biz/src/main/java/com/lrj/oa/admin/application/AssetService.java
+oa-admin-biz/src/main/java/com/lrj/oa/admin/application/RoomBookingService.java
+oa-admin-biz/src/main/java/com/lrj/oa/admin/application/VehicleVisitorService.java
+oa-doc/src/main/java/com/lrj/oa/doc/application/KnowledgeBaseService.java
+oa-doc/src/main/java/com/lrj/oa/doc/application/OfficialDocService.java
+oa-file-service/src/main/java/com/lrj/oa/file/application/FileService.java
+oa-flow/src/main/java/com/lrj/oa/flow/application/ApprovalService.java
+oa-flow/src/main/java/com/lrj/oa/flow/application/BusinessDocService.java
+oa-flow/src/main/java/com/lrj/oa/flow/web/WorkbenchController.java
+oa-iam/src/main/java/com/lrj/oa/iam/application/GrantService.java
+oa-iam/src/main/java/com/lrj/oa/iam/web/RoleController.java
+oa-job-service/src/main/java/com/lrj/oa/job/application/JobRunner.java
+oa-job-service/src/main/java/com/lrj/oa/job/application/OaJobs.java
+oa-job-service/src/main/java/com/lrj/oa/job/web/JobController.java
+oa-notify-service/src/main/java/com/lrj/oa/notify/application/AnnouncementService.java
+oa-notify-service/src/main/java/com/lrj/oa/notify/application/NotifyService.java
+oa-notify-service/src/main/java/com/lrj/oa/notify/application/ReadReceiptStore.java
+oa-notify-service/src/main/java/com/lrj/oa/notify/application/RecipientIndex.java
+oa-org/src/main/java/com/lrj/oa/org/application/OrgSeedService.java
+oa-report/src/main/java/com/lrj/oa/report/application/AuditService.java
+oa-report/src/main/java/com/lrj/oa/report/application/DashboardService.java

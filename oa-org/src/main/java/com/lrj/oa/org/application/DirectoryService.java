@@ -28,7 +28,8 @@ public class DirectoryService {
         this.crypto = crypto;
     }
 
-    @DataScope(alias = "t", orgColumn = "org_id", pathColumn = "org_path",
+    @DataScope(permission = "oa:employee:view", table = "oa_org.v_employee_directory",
+               alias = "t", orgColumn = "org_id", pathColumn = "org_path",
                userColumn = "user_id", module = "org")
     public List<DirectoryEntryView> search(String keyword, int limit) {
         List<DirectoryRow> rows = directoryMapper.search(keyword, Math.min(limit, 500));
@@ -37,7 +38,8 @@ public class DirectoryService {
         return out;
     }
 
-    @DataScope(alias = "t", orgColumn = "org_id", pathColumn = "org_path",
+    @DataScope(permission = "oa:employee:view", table = "oa_org.v_employee_directory",
+               alias = "t", orgColumn = "org_id", pathColumn = "org_path",
                userColumn = "user_id", module = "org")
     public long countVisible() {
         return directoryMapper.countVisible();
@@ -64,7 +66,8 @@ public class DirectoryService {
     }
 
     /** 游标分页。带数据权限 —— 分页绝不能成为绕过它的口子。 */
-    @DataScope(alias = "t", orgColumn = "org_id", pathColumn = "org_path",
+    @DataScope(permission = "oa:employee:view", table = "oa_org.v_employee_directory",
+               alias = "t", orgColumn = "org_id", pathColumn = "org_path",
                userColumn = "user_id", module = "org")
     public List<DirectoryEntryView> page(Long cursor, String keyword, int size) {
         List<DirectoryRow> rows = directoryMapper.page(cursor, keyword, Math.min(Math.max(size, 1), 500));
@@ -74,7 +77,8 @@ public class DirectoryService {
     }
 
     /** 增量：自 since 之后变化的行（带数据权限）。 */
-    @DataScope(alias = "t", orgColumn = "org_id", pathColumn = "org_path",
+    @DataScope(permission = "oa:employee:view", table = "oa_org.v_employee_directory",
+               alias = "t", orgColumn = "org_id", pathColumn = "org_path",
                userColumn = "user_id", module = "org")
     public List<DirectoryEntryView> changedSince(long since, int size) {
         List<DirectoryRow> rows = directoryMapper.changedSince(since, Math.min(Math.max(size, 1), 500));

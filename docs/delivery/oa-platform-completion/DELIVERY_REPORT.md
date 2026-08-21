@@ -40,3 +40,6 @@ README、架构、API、Runbook 与权威实施进度已同步；GitHub Actions 
 
 真实 workflow-platform 最终会话未运行；保留既有 Phase 4b 远程关卡。USER_GROUP、ABAC、
 JIT-to-BPMN、SpiceDB KB 适配器和外部消息供应商不在本交付范围。
+
+> 后续状态：USER_GROUP 与 ABAC 已在 2026-08-21 的独立交付中完成；证据见
+> `docs/delivery/user-group-abac/`。本报告的“范围外”保留用于描述当时交付边界。

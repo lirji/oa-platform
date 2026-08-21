@@ -3,49 +3,76 @@ package com.lrj.oa.iam.infrastructure.datascope;
 import com.lrj.oa.security.annotation.DataScope;
 import com.lrj.oa.security.model.DataScopeRule;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
+
 /**
- * 当前线程正在生效的数据权限上下文。
+ * 当前线程的数据权限执行栈。切面负责 push/pop，MyBatis handler 记录真实表和求值结果。
  *
- * <p>为什么需要它：{@code @DataScope} 标在<b>服务方法</b>上，而 SQL 改写发生在
- * <b>MyBatis 拦截器</b>里，两者之间没有直接的调用参数可传。ThreadLocal 是它们之间唯一的桥。
- * 切面负责 set/clear，拦截器只读。
+ * <p>执行记录必须区分“ALL 明确放行”和“根本没有执行策略”；前者 evaluated=true、predicate=false，
+ * 后者在 strict 模式下拒绝。栈结构保证嵌套 scoped service 不会覆盖外层上下文。
  */
 public final class DataScopeContext {
 
-    public record Active(DataScope annotation, DataScopeRule rule) {}
+    public static final class Active {
+        private final DataScope annotation;
+        private final DataScopeRule rule;
+        private final Set<String> seenTables = new LinkedHashSet<>();
+        private boolean evaluated;
+        private boolean predicateInjected;
 
-    private static final ThreadLocal<Active> HOLDER = new ThreadLocal<>();
-    /**
-     * 本次 {@code @DataScope} 是否真的被拦截器用上了。
-     *
-     * <p>★ 防的是一个很安静的洞：{@code @DataScope} 只对<b>走 MyBatis</b> 的查询生效。
-     * 标在一个用 JdbcTemplate 手写 SQL 的方法上，切面照常设上下文、拦截器<b>永远不会被调用</b>，
-     * 于是这个方法看起来"有数据权限"，实际返回全量数据 —— 代码 review 时最容易放过的那种，
-     * 因为注解就明晃晃写在那儿。
-     * 有了这个标记，切面可以在方法返回时发现"设了却没人用"，把静默泄露变成一条刺眼的告警。
-     */
-    private static final ThreadLocal<Boolean> CONSUMED = new ThreadLocal<>();
+        private Active(DataScope annotation, DataScopeRule rule) {
+            this.annotation = annotation;
+            this.rule = rule;
+        }
+
+        public DataScope annotation() { return annotation; }
+        public DataScopeRule rule() { return rule; }
+        public Set<String> seenTables() { return Set.copyOf(seenTables); }
+        public boolean evaluated() { return evaluated; }
+        public boolean predicateInjected() { return predicateInjected; }
+        public void seen(String table) { seenTables.add(normalize(table)); }
+        public boolean targets(String table) {
+            return normalize(annotation.table()).equals(normalize(table));
+        }
+        public void evaluated(boolean injected) {
+            evaluated = true;
+            predicateInjected |= injected;
+        }
+    }
+
+    private static final ThreadLocal<Deque<Active>> HOLDER = ThreadLocal.withInitial(ArrayDeque::new);
 
     private DataScopeContext() {}
 
-    public static void set(DataScope annotation, DataScopeRule rule) {
-        HOLDER.set(new Active(annotation, rule));
-        CONSUMED.set(Boolean.FALSE);
+    public static Active push(DataScope annotation, DataScopeRule rule) {
+        Active active = new Active(annotation, rule);
+        HOLDER.get().push(active);
+        return active;
     }
 
     public static Active peek() {
-        Active a = HOLDER.get();
-        if (a != null) CONSUMED.set(Boolean.TRUE);
-        return a;
+        Deque<Active> stack = HOLDER.get();
+        return stack.isEmpty() ? null : stack.peek();
     }
 
-    /** 切面用：本次上下文有没有被 MyBatis 拦截器取走过。 */
-    public static boolean wasConsumed() {
-        return Boolean.TRUE.equals(CONSUMED.get());
+    public static void pop(Active expected) {
+        Deque<Active> stack = HOLDER.get();
+        if (!stack.isEmpty() && stack.peek() == expected) stack.pop();
+        else stack.remove(expected);
+        if (stack.isEmpty()) HOLDER.remove();
     }
 
-    public static void clear() {
-        HOLDER.remove();
-        CONSUMED.remove();
+    /** 测试兼容入口。 */
+    public static void set(DataScope annotation, DataScopeRule rule) { push(annotation, rule); }
+    public static boolean wasConsumed() { Active active = peek(); return active != null && active.evaluated(); }
+    public static void clear() { HOLDER.remove(); }
+
+    private static String normalize(String table) {
+        if (table == null) return "";
+        return table.replace("\"", "").trim().toLowerCase(Locale.ROOT);
     }
 }

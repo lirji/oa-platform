@@ -144,12 +144,15 @@ public final class ApiSurfaceGolden {
     }
 
     private static String stanceOf(JavaMethod m) {
-        if (m.isAnnotatedWith(RequiresPerm.class)) {
-            RequiresPerm rp = m.getAnnotationOfType(RequiresPerm.class);
+        RequiresPerm rp = m.isAnnotatedWith(RequiresPerm.class)
+                ? m.getAnnotationOfType(RequiresPerm.class)
+                : m.getOwner().isAnnotatedWith(RequiresPerm.class)
+                    ? m.getOwner().getAnnotationOfType(RequiresPerm.class) : null;
+        if (rp != null) {
             String codes = String.join("|", rp.value());
             return rp.elevation() ? codes + " [需提权]" : codes;
         }
-        if (m.isAnnotatedWith(PublicApi.class)) return "(public)";
+        if (m.isAnnotatedWith(PublicApi.class) || m.getOwner().isAnnotatedWith(PublicApi.class)) return "(public)";
         // 走到这里说明 ControllerAuthorizationStance 那条检查漏了 —— golden 里把它标出来
         return "!! 无授权声明 !!";
     }

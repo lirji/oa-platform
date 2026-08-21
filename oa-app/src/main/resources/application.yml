@@ -67,6 +67,8 @@ oa:
     data-key: ${OA_CRYPTO_DATA_KEY:}          # base64 的 32 字节；不配则用开发默认密钥并告警
   iam:
     enforce: ${OA_IAM_ENFORCE:true}      # 接口权限校验总开关；关掉等于拆掉唯一的安全边界
+    data-scope:
+      strict: ${OA_DATA_SCOPE_STRICT:true} # 未消费/表或别名错配直接拒绝，生产必须为 true
     bootstrap-admin-user-id: ${OA_BOOTSTRAP_ADMIN:}   # 初始管理员，补一条真实 SUPER_ADMIN 授权
     elevation:
       max-hours: 8             # JIT 提权时长上限
@@ -76,7 +78,7 @@ oa:
       l2-enabled: true         # Redis 二级缓存（冷启动/被挤出 L1 时用）
       l2-ttl-seconds: 1800
     abac:
-      enabled: false           # ABAC 条件引擎，Phase 4 报销场景才开
+      enabled: ${OA_IAM_ABAC_ENABLED:false} # 先配置/预览策略，再按环境灰度开启
     shadow-verify:
       enabled: true            # 判权影子校验，上线 2 周指标为 0 后可关（R2 兜底）
       sample-rate: 0.01

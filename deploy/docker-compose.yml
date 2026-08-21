@@ -122,6 +122,8 @@ services:
       # ⚠️ 生产必须注入真实密钥，否则敏感字段用的是仓库里写死的开发默认密钥
       OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
       OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_DATA_SCOPE_STRICT: ${OA_DATA_SCOPE_STRICT:-true}
+      OA_IAM_ABAC_ENABLED: ${OA_IAM_ABAC_ENABLED:-false}
       OA_SECURITY_MODE: ${OA_SECURITY_MODE:-JWT}
       OA_JWT_JWKS: ${OA_JWT_JWKS:-http://host.docker.internal:8000/.well-known/jwks}
       OA_JWT_ISSUER: ${OA_JWT_ISSUER:-http://localhost:8000}
@@ -267,7 +269,7 @@ services:
     ports:
       - "${OA_CONSOLE_PORT:-8404}:8404"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8404/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8404/healthz || exit 1"]
       interval: 10s
       timeout: 3s
       start_period: 10s
@@ -285,7 +287,7 @@ services:
     ports:
       - "${OA_MOBILE_PORT:-8405}:8405"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8405/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8405/healthz || exit 1"]
       interval: 10s
       timeout: 3s
       start_period: 10s

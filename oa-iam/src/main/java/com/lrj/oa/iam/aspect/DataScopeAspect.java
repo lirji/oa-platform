@@ -1,7 +1,10 @@
 package com.lrj.oa.iam.aspect;
 
+import com.lrj.oa.common.api.ResultCode;
+import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.iam.infrastructure.cache.PermissionEngine;
 import com.lrj.oa.iam.infrastructure.datascope.DataScopeContext;
+import com.lrj.oa.iam.infrastructure.datascope.DataScopeMetrics;
 import com.lrj.oa.security.annotation.DataScope;
 import com.lrj.oa.security.context.UserContext;
 import com.lrj.oa.security.context.UserContextHolder;
@@ -11,6 +14,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.annotation.Order;
@@ -32,34 +36,55 @@ public class DataScopeAspect {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DataScopeAspect.class);
 
     private final PermissionEngine engine;
+    private final boolean strict;
+    private final DataScopeMetrics metrics;
 
-    public DataScopeAspect(PermissionEngine engine) { this.engine = engine; }
+    public DataScopeAspect(PermissionEngine engine,
+                           @Value("${oa.iam.data-scope.strict:true}") boolean strict,
+                           DataScopeMetrics metrics) {
+        this.engine = engine;
+        this.strict = strict;
+        this.metrics = metrics;
+    }
 
     @Around("@annotation(com.lrj.oa.security.annotation.DataScope)")
     public Object apply(ProceedingJoinPoint jp) throws Throwable {
         DataScope ann = findAnnotation(jp);
         if (ann == null) return jp.proceed();
 
+        if (ann.permission().isBlank() || ann.table().isBlank()) {
+            throw new IllegalStateException("@DataScope 必须声明 permission 和 table: "
+                    + jp.getSignature().toShortString());
+        }
+        if (!AuthorizationContext.allows(ann.permission())) {
+            metrics.denied();
+            throw BusinessException.of(ResultCode.PERM_DENIED,
+                    "数据范围权限未通过接口判权: " + ann.permission());
+        }
+
         UserContext ctx = UserContextHolder.peek();
         DataScopeRule rule = (ctx == null)
                 ? DataScopeRule.none()
-                : engine.dataScope(ctx.userId(), ann.module());
+                : engine.dataScopeForPermission(ctx.userId(), ann.permission());
 
-        DataScopeContext.set(ann, rule);
+        DataScopeContext.Active active = DataScopeContext.push(ann, rule);
         try {
             Object result = jp.proceed();
-            if (!DataScopeContext.wasConsumed()) {
-                // 设了数据权限却没有任何 MyBatis 查询取走它 —— 说明这个方法要么根本没查库，
-                // 要么用的是 JdbcTemplate 这类绕过拦截器的路径。后者是个静默的全量泄露：
-                // 注解明晃晃写着，行为却完全没有过滤。必须吵出来。
-                log.warn("★ @DataScope 未生效：{}#{} 设置了数据权限上下文，但没有任何 MyBatis 查询消费它。"
-                                + " 用 JdbcTemplate 手写 SQL 会绕过拦截器 —— 该方法可能正在返回全量数据。",
-                        jp.getSignature().getDeclaringType().getSimpleName(), jp.getSignature().getName());
+            if (!active.evaluated()) {
+                metrics.missing();
+                String detail = "@DataScope 未命中目标表 " + ann.table()
+                        + "，实际表=" + active.seenTables() + " method=" + jp.getSignature().toShortString();
+                if (strict) {
+                    metrics.denied();
+                    throw new IllegalStateException(detail);
+                }
+                log.warn("★ {}", detail);
+            } else {
+                metrics.evaluated(active.predicateInjected());
             }
             return result;
         } finally {
-            // 嵌套调用与线程复用都会让残留的上下文污染下一次查询，必须清
-            DataScopeContext.clear();
+            DataScopeContext.pop(active);
         }
     }
 

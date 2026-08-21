@@ -26,7 +26,11 @@ public final class PermissionSnapshot {
     private final RoaringBitmap elevatedBits;
     private final DataScopeRule mergedScope;
     private final Map<String, DataScopeRule> moduleScope;
+    private final Map<Integer, DataScopeRule> permissionScope;
     private final Set<String> delegators;
+    private final boolean abacEnabled;
+    private final RoaringBitmap abacUnconditionalBits;
+    private final Map<Integer, List<AbacBranch>> abacBranches;
     private final long builtAt;
     private final long expireAt;
 
@@ -39,7 +43,13 @@ public final class PermissionSnapshot {
         this.elevatedBits = b.elevatedBits;
         this.mergedScope = b.mergedScope;
         this.moduleScope = Map.copyOf(b.moduleScope);
+        this.permissionScope = Map.copyOf(b.permissionScope);
         this.delegators = Set.copyOf(b.delegators);
+        this.abacEnabled = b.abacEnabled;
+        this.abacUnconditionalBits = b.abacUnconditionalBits;
+        Map<Integer, List<AbacBranch>> branches = new HashMap<>();
+        b.abacBranches.forEach((k, v) -> branches.put(k, List.copyOf(v)));
+        this.abacBranches = Map.copyOf(branches);
         this.builtAt = b.builtAt;
         this.expireAt = b.expireAt;
     }
@@ -53,6 +63,12 @@ public final class PermissionSnapshot {
         return moduleScope.getOrDefault(module, mergedScope);
     }
 
+    /** 权限点级数据范围；没有该权限或范围时安全地返回 NONE。 */
+    public DataScopeRule scopeOfPermission(int permId) {
+        if (permId < 0 || !has(permId)) return DataScopeRule.none();
+        return permissionScope.getOrDefault(permId, DataScopeRule.none());
+    }
+
     public boolean expired(long nowMs) { return nowMs >= expireAt; }
 
     // ── 访问器 ──────────────────────────────────────────
@@ -64,7 +80,12 @@ public final class PermissionSnapshot {
     public RoaringBitmap elevatedBits() { return elevatedBits; }
     public DataScopeRule mergedScope() { return mergedScope; }
     public Map<String, DataScopeRule> moduleScope() { return moduleScope; }
+    public Map<Integer, DataScopeRule> permissionScope() { return permissionScope; }
     public Set<String> delegators() { return delegators; }
+    public boolean abacEnabled() { return abacEnabled; }
+    public boolean abacUnconditional(int permId) { return abacUnconditionalBits.contains(permId); }
+    public RoaringBitmap abacUnconditionalBits() { return abacUnconditionalBits; }
+    public Map<Integer, List<AbacBranch>> abacBranches() { return abacBranches; }
     public long builtAt() { return builtAt; }
     public long expireAt() { return expireAt; }
     public int permCount() { return permBits.getCardinality(); }
@@ -101,7 +122,11 @@ public final class PermissionSnapshot {
         private final RoaringBitmap elevatedBits = new RoaringBitmap();
         private DataScopeRule mergedScope = DataScopeRule.none();
         private final Map<String, DataScopeRule> moduleScope = new HashMap<>();
+        private final Map<Integer, DataScopeRule> permissionScope = new HashMap<>();
         private Set<String> delegators = Set.of();
+        private boolean abacEnabled;
+        private final RoaringBitmap abacUnconditionalBits = new RoaringBitmap();
+        private final Map<Integer, LinkedHashSet<AbacBranch>> abacBranches = new HashMap<>();
         private long builtAt = System.currentTimeMillis();
         private long expireAt = Long.MAX_VALUE;
 
@@ -126,7 +151,20 @@ public final class PermissionSnapshot {
             return this;
         }
 
+        /** 同时维护兼容的模块范围和新的权限点级范围。 */
+        public Builder scope(int permId, String module, DataScopeRule rule) {
+            scope(module, rule);
+            permissionScope.merge(permId, rule, PermissionSnapshot::widen);
+            return this;
+        }
+
         public Builder delegators(Collection<String> v) { this.delegators = Set.copyOf(v); return this; }
+        public Builder abacEnabled(boolean v) { this.abacEnabled = v; return this; }
+        public Builder markAbacUnconditional(int permId) { abacUnconditionalBits.add(permId); return this; }
+        public Builder addAbacBranch(int permId, AbacBranch branch) {
+            abacBranches.computeIfAbsent(permId, ignored -> new LinkedHashSet<>()).add(branch);
+            return this;
+        }
         public Builder builtAt(long v) { this.builtAt = v; return this; }
         public Builder expireAt(long v) { this.expireAt = v; return this; }
 
@@ -144,12 +182,32 @@ public final class PermissionSnapshot {
             return this;
         }
 
+        public Builder rawPermissionScope(Map<Integer, DataScopeRule> perPermission) {
+            if (perPermission != null) this.permissionScope.putAll(perPermission);
+            return this;
+        }
+
+        public Builder rawAbac(boolean enabled, RoaringBitmap unconditional,
+                               Map<Integer, List<AbacBranch>> branches) {
+            this.abacEnabled = enabled;
+            if (unconditional != null) this.abacUnconditionalBits.or(unconditional);
+            if (branches != null) branches.forEach((id, values) ->
+                    this.abacBranches.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).addAll(values));
+            return this;
+        }
+
         public PermissionSnapshot build() { return new PermissionSnapshot(this); }
     }
 
     /** 无任何权限的空快照。未入职账号、或找不到员工记录时用它 —— 安全默认值是"什么都不能做"。 */
     public static PermissionSnapshot empty(String userId, long epoch, long userVersion, long ttlMs) {
+        return empty(userId, epoch, userVersion, ttlMs, false);
+    }
+
+    public static PermissionSnapshot empty(String userId, long epoch, long userVersion, long ttlMs,
+                                           boolean abacEnabled) {
         return builder(userId).epoch(epoch).userVersion(userVersion)
+                .abacEnabled(abacEnabled)
                 .scope(null, DataScopeRule.none())
                 .expireAt(System.currentTimeMillis() + ttlMs)
                 .build();

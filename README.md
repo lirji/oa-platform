@@ -15,6 +15,7 @@
 | Phase 8 | 报表 / 审计 / 跑批 / 文件 / ★渗透用例 | ✅ 冒烟 40/40 |
 | Phase 3 · 6 | PC 前端 `oa-console` · 移动端 `oa-mobile` | ✅ 发布关卡 14/14 · 13/13 |
 | 交付收口 | OpenAPI 契约 / CI / JWT+WS / 全链路压测 | ✅ 全部通过 |
+| 权限增强 | USER_GROUP 显式成员组 / 受限 ABAC 条件引擎 | ✅ Phase 9 冒烟通过 |
 
 **后端 231 条阶段冒烟断言全绿，PC、移动端、JWT/WebSocket 和发布门禁均已完成。**
 最终验收证据见 [`docs/delivery/oa-platform-completion/`](docs/delivery/oa-platform-completion/)。
@@ -129,6 +130,7 @@ bash deploy/scripts/phase8-report-audit-smoke.sh # 报表/审计/跑批/文件/�
 bash deploy/scripts/phase3-console-smoke.sh      # PC 契约/单测/E2E/镜像/代理 14 断言
 bash deploy/scripts/phase4-jwt-ws-smoke.sh       # Casdoor/JWT/WS ticket       13 断言
 bash deploy/scripts/phase5-mobile-smoke.sh       # 移动四主流程/镜像/代理       13 断言
+bash deploy/scripts/phase9-iam-policy-smoke.sh   # USER_GROUP + ABAC           10 关卡
 
 # 压测（单文件 Java 程序，无需构建、无需装 k6）
 java deploy/scripts/PunchLoadTest.java      http://localhost:8400 10000 300   # 早高峰打卡
@@ -145,6 +147,8 @@ OA_NOTIFY_BASE=http://localhost:8401 OA_ADMIN=seed-user-1 \
 |---|---|
 | `ControllerPermissionCoverageTest` / `*AuthorizationStanceTest` | 每个 handler 必须声明授权立场；**四个可部署单元都覆盖** |
 | `ApiSurfaceGoldenTest` | 冻结 120 个端点的「路径 → 权限点」，偷改会让构建失败 |
+| `DataAccessSurfaceGoldenTest` | 冻结已迁移数据方法的「权限点 → 目标表 → 模式」 |
+| `JdbcBypassArchitectureTest` | application/web 直接 JDBC 迁移基线只能减少，禁止新增或关闭数据权限拦截器 |
 | `ArchitectureRulesTest` | 跨模块只走 `..api..`；Controller 不直连 Mapper |
 | `Phase0PinningProbeTest` | 虚拟线程 pinning 回归 |
 | `CompleteTaskVariableGuardTest`（中台侧） | 通用办理的 variables 不能伪造办理人 |
@@ -178,6 +182,7 @@ oa-security        JWT/UserContext/@RequiresPerm/@DataScope/@Sensitive/@PublicAp
                    ★ 只定义判权端口，不含实现——任何模块依赖注解都不会把权限域实现拖进来
 oa-org             组织域 + OrgTreeCache（COW 内存树）+ OrgQueryApi
 oa-iam             权限域 + PermissionEngine 三级缓存（PermissionChecker 的实现方）
+                   + USER_GROUP 时间窗成员 + 快照化受限 ABAC 条件分支
 oa-flow            表单引擎 + 审批 + 事务发件箱 + 待办读模型 + 请假
 oa-attendance      排班 / 打卡削峰 / 日结
 oa-doc oa-admin-biz oa-report    公文/知识库、行政、报表/审计
@@ -208,8 +213,10 @@ oa-mobile          员工 H5 :5474 / :8405（待办、打卡、通讯录、公�
 | 文档 | 内容 |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构全景：组织建模、判权引擎、三类权限、审批链路、削峰 |
+| [docs/ABAC.md](docs/ABAC.md) | ABAC 授权维度、表达式上下文、组合规则、启停和管理端编辑指南 |
 | [docs/ADR.md](docs/ADR.md) | 决策记录，含**被否掉的方案**与实现期新增的决策 |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | 运维手册：启停、排障、**踩过的坑清单** |
 | [docs/API.md](docs/API.md) | 接口一览与权限点对照 |
+| [数据权限全局保障方案](docs/plans/data-permission-global-guard/FINAL_PLAN.md) | 已落地的平台强制协议、全仓迁移阶段与验收标准 |
 | `docs/plans/oa-platform-0819-1721/` | 原始规划（FINAL_PLAN 845 行）与**权威进度文件** |
 | `docs/plans/oa-console-0820-0500/` | PC 控制台的决策记录与 15 步实施计划 |

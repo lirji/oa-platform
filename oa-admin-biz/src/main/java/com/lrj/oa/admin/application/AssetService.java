@@ -39,10 +39,10 @@ public class AssetService {
      *
      * <p>★ 走 MyBatis 而不是 JdbcTemplate：{@code @DataScope} 的 SQL 改写发生在
      * MyBatis 拦截器里，手写 JdbcTemplate 会绕过它 —— 注解还在、过滤没了，
-     * 是一种代码 review 时最容易放过的全量泄露。DataScopeAspect 现在会对
-     * "设了却没人消费"发告警，但正确的做法是一开始就用对路径。
+     * 是一种代码 review 时最容易放过的全量泄露。严格模式下 DataScopeAspect 会对
+     * "设了却没人消费"直接拒绝，但正确的做法是一开始就用对路径。
      */
-    @DataScope(module = "admin", alias = "a")
+    @DataScope(permission = "oa:asset:read", table = "oa_admin.asset", module = "admin", alias = "a")
     public List<AdminDtos.AssetView> listAssets(String status, int limit) {
         return assetQuery.search(status, Math.min(Math.max(limit, 1), 500)).stream()
                 .map(r -> new AdminDtos.AssetView(r.id, r.assetNo, r.name, r.category,

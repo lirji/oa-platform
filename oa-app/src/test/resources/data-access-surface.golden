@@ -1,0 +1,6 @@
+# class#method MODE permission table module alias
+com.lrj.oa.admin.application.AssetService#listAssets SCOPED oa:asset:read oa_admin.asset admin a
+com.lrj.oa.org.application.DirectoryService#changedSince SCOPED oa:employee:view oa_org.v_employee_directory org t
+com.lrj.oa.org.application.DirectoryService#countVisible SCOPED oa:employee:view oa_org.v_employee_directory org t
+com.lrj.oa.org.application.DirectoryService#page SCOPED oa:employee:view oa_org.v_employee_directory org t
+com.lrj.oa.org.application.DirectoryService#search SCOPED oa:employee:view oa_org.v_employee_directory org t

@@ -66,8 +66,9 @@
 PermissionSnapshot {
   permBits      : RoaringBitmap   // 800 个权限点压缩后 < 1 KB
   elevatedBits  : RoaringBitmap   // 当前活跃的 JIT 提权覆盖的权限点
+  permissionScope: Map<权限点, 范围> // 数据范围的强制读取入口
   mergedScope   : DataScopeRule   // 合并后最宽的数据范围
-  moduleScope   : Map<模块, 范围>  // 考勤=全公司、报销=本部门
+  moduleScope   : Map<模块, 范围>  // 迁移期诊断字段，不能用于严格判权
   delegators    : Set<String>     // 我正在代理谁
   epoch / userVersion / expireAt
 }
@@ -114,8 +115,19 @@ L2 用 JSON 而不是 Kryo/Protobuf：它不在热路径上（命中 L1 就走�
 | 类型 | 落点 | 是否安全边界 |
 |---|---|---|
 | **接口权限** | `@RequiresPerm` 切面 + fail-closed 拦截器兜底 | ✅ **唯一安全边界** |
-| **数据权限** | `@DataScope` 改写 SQL（行级）+ `@Sensitive` 序列化层脱敏（列级） | ✅ 行级与列级 |
+| **数据权限** | 权限点级 `@DataScope` + 严格 SQL 消费协议 + `@Sensitive`（列级） | ⚠️ 平台能力已强制，业务覆盖迁移中 |
 | **页面权限** | 后端下发 permCodes/菜单，前端裁剪展示 | ❌ 仅体验 |
+
+接口权限已有构建期覆盖测试、API Golden 和运行期未声明拒绝三道门禁。数据权限平台层现在按
+`permission → DataScopeRule` 解析；`@DataScope` 必须声明入口权限点和真实目标表，而且该权限点必须是
+本次 RBAC/ABAC 实际通过的权限。严格模式下，目标 SQL 未执行、目标表/alias 错配、条件构造或解析失败
+都会拒绝请求；`ALL` 也会留下“已明确求值”记录。首批受管表注册表还会拒绝没有任何 DataScope
+上下文的 MyBatis 查询，让已迁移表在遗漏注解时同样 fail-closed。JWT 模式启动时禁止关闭接口判权或严格模式。
+
+当前已迁移并冻结 5 个 `DirectoryService` / `AssetService` 数据方法。全仓仍有 21 个 application/web
+类直接使用 JDBC；`JdbcBypassArchitectureTest` 已冻结这份债务，任何新增都会使 CI 失败，但这些既有路径
+仍要按模块迁移后，才能宣称所有业务数据已全局覆盖。完整清单、阶段和验收标准见
+[接口权限与数据权限全局保障方案](plans/data-permission-global-guard/FINAL_PLAN.md)。
 
 ### 数据权限怎么翻译成 SQL
 
@@ -133,6 +145,11 @@ L2 用 JSON 而不是 Kryo/Protobuf：它不在热路径上（命中 L1 就走�
 > ⚠️ MyBatis-Plus 拦截器顺序：**数据权限必须排在分页之前**。
 > 排在后面的话，分页改写出的 count 语句会绕过数据权限，
 > 出现"列表被过滤了、总数没被过滤"的经典越权。
+
+运行期指标为 `oa_data_scope_evaluations_total`、`oa_data_scope_predicates_total`、
+`oa_data_scope_denied_total`、`oa_data_scope_missing_total`、`oa_data_scope_alias_mismatch_total` 和
+`oa_data_scope_bypass_total`。`missing`/`alias_mismatch` 在严格模式下既计数也失败；旁路记录主体、方法、
+reason、表和 traceId。
 
 ### 三类临时授权，不能混为一谈
 
@@ -235,10 +252,24 @@ OpenAPI 快照生成 `oa-console/src/shared/types/openapi.d.ts` 并参与类型�
 300KB / 220KB 首屏 gzip 门禁约束。容器 Nginx 使用 Docker DNS 动态解析四个后端，避免滚动重建后
 继续缓存旧容器 IP。
 
-## 8. 明确没做的
+## 8. USER_GROUP 与 ABAC
 
-- `USER_GROUP` 授权主体：表里预留，解析器遇到会**告警并跳过**（需要动态人群表）。
-- ABAC 条件引擎：建表完成，`oa.iam.abac.enabled=false`。
+- `USER_GROUP` 是 OA 内部显式成员组，不复用 Casdoor group。`user_group_member` 支持
+  `valid_from/valid_to` 与软撤销；快照 TTL 会被最近成员边界压低，组禁用或移出成员推进全局 epoch。
+- 组授权仍使用 `grant_record`，继承角色、临时授权和数据范围语义；判权热路径只读权限快照，
+  来源链会明确显示用户组。
+- ABAC 条件按 `(tenant, role, permission)` 管理并进入 L1/L2 快照。同一角色权限下的条件 AND、
+  不同角色分支 OR，任一适用角色没有条件时旁路。受限 SpEL 只暴露方法入参和只读 `#user`，
+  禁止类型、Bean、构造器、方法调用与赋值；缺变量或求值错误 fail-closed。
+- `OA_IAM_ABAC_ENABLED=false` 为默认兼容模式；先配置/审查策略，再按环境开启并监控
+  `oa_iam_abac_{evaluations,denied,errors}_total`。
+
+ABAC 的完整属性清单、组合规则、表达式限制和编辑流程见 [ABAC 授权与管理指南](ABAC.md)。
+
+## 9. 明确没做的
+
+- 动态规则组、嵌套用户组与 Casdoor group 同步不在首版 USER_GROUP 范围。
+- ABAC 不会在请求时查业务数据库；仅能使用方法参数和用户上下文。
 - JIT 提权接审批流：`approval_instance_id` 字段已留，尚未接 BPMN。
 - 排班、加班调休仍未实现；额度年初批量发放、考勤日结与分区滚动已有跑批端点，但生产调度策略需部署方配置。
 - 知识库当前使用本地对象授权实现；`oa.authz.spicedb.enabled=true` 的 SpiceDB 适配器仍是显式 fail-fast 骨架。

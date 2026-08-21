@@ -44,6 +44,7 @@ pkill -f 'oa-app-.*\.jar'
 | 闭包一致性 | `GET /api/v1/org/units/consistency` | `inconsistencies: 0` |
 | 判权缓存 | `GET /api/v1/iam/admin/cache-stats` | **`shadowMismatches: 0`** |
 | 判权延迟 | `GET /api/v1/iam/admin/bench?userId=…` | `p99Us < 1000` |
+| 数据权限严格执行 | `/actuator/metrics/oa_data_scope_missing_total` 与 `...alias_mismatch_total` | 不增长；任何增长立即排查 |
 | 发件箱 | `GET /api/v1/flow/admin/status` | `dead: 0`，`pending` 不持续增长 |
 | 打卡链路 | `GET /api/v1/attendance/admin/stats` | `deadLettered: 0`，`duplicates: 0` |
 | PC / Mobile | `curl -I :8404/healthz` / `curl -I :8405/healthz` | HTTP 204 |
@@ -68,9 +69,21 @@ pkill -f 'oa-app-.*\.jar'
 
 ### 「查出来的数据比预期多/少」
 
-数据权限只在标了 `@DataScope` 的服务方法上生效，且**别名必须与 SQL 里的表别名一致** ——
-对不上就等于没有过滤。用 `GET /api/v1/me/permissions` 看 `dataScope` 与 `scopePrefixes`，
-它们就是拼进 WHERE 的那些前缀。
+先确认调用的是已迁移的 `@DataScope` 方法。注解中的 `permission` 必须是入口 RBAC/ABAC 实际通过的
+权限点，`table` 和 `alias` 必须与 SQL 一致；数据范围按该权限点单独计算，不再读取模块最宽范围。
+用 `GET /api/v1/me/permissions` 核对权限和范围，并查看上述 `oa_data_scope_*` 指标。
+
+`OA_DATA_SCOPE_STRICT=true` 时，目标 SQL 没有被 MyBatis 消费、表名/alias 错配、条件解析失败都会直接
+失败，不会静默返回全量。`GovernedTableRegistry` 中的已迁移表即使遗漏注解、直接调用 Mapper 也会拒绝。
+当前 5 个已迁移方法由 `data-access-surface.golden` 冻结；全仓 21 个直接 JDBC
+类由 `jdbc-bypass-surface.golden` 冻结为迁移债务，只能减少、不能新增。因此平台严格协议已启用，
+但未完成模块迁移的 JDBC 接口仍不能视为行级数据权限已覆盖。迁移顺序见
+[接口权限与数据权限全局保障方案](plans/data-permission-global-guard/FINAL_PLAN.md)。
+
+若 Docker 使用 `OA_SECURITY_MODE=DEV`，调用方可以通过 `X-OA-User` 切换身份，该模式只能用于联调。
+对外环境必须使用 JWT，并保持 `OA_IAM_ENFORCE=true`、`OA_DATA_SCOPE_STRICT=true`；JWT 模式下任一
+开关为 false 会启动失败。否则接口和数据权限建立在可伪造身份上。可用
+`docker inspect oa-app` 检查容器实际环境变量，不能仅根据 `.env.example` 判断运行状态。
 
 ### 「打卡显示成功但库里没有」
 
@@ -188,13 +201,28 @@ mvn -B test
 bash deploy/scripts/phase3-console-smoke.sh
 bash deploy/scripts/phase4-jwt-ws-smoke.sh
 bash deploy/scripts/phase5-mobile-smoke.sh
+OA_PHASE9_APP_BASE=http://127.0.0.1:18400 bash deploy/scripts/phase9-iam-policy-smoke.sh
 OA_NOTIFY_BASE=http://127.0.0.1:8401 OA_ADMIN=seed-user-1 \
   java deploy/scripts/FullChainLoadTest.java http://127.0.0.1:18400 1000 20
 ```
 
-Phase 3 覆盖 PC 契约、105 条单测、47 条浏览器 E2E、镜像与代理；Phase 4 覆盖真实 Casdoor、
+Phase 3 覆盖 PC 契约、105 条单测、50 条浏览器 E2E、镜像与代理；Phase 4 覆盖真实 Casdoor、
 四服务 JWT 与一次性 WS ticket；Phase 5 覆盖移动四主流程、390/320px、镜像与代理。
 全链路压测必须 0 失败且每个场景 P99 低于程序内预算。详细基线见交付 QA 报告。
+
+### USER_GROUP / ABAC 发布与回滚
+
+1. V14 只新增组表并增强 `permission_condition`；先部署迁移和代码，保持
+   `OA_IAM_ABAC_ENABLED=false`。
+2. 运行 `OA_PHASE9_APP_BASE=http://127.0.0.1:8400 bash deploy/scripts/phase9-iam-policy-smoke.sh`。
+   脚本会回收授权/成员/条件，只保留一条禁用的 QA 用户组生命周期记录。
+3. 在 PC“权限策略 → ABAC 条件”配置并审查策略，测试环境设
+   `OA_IAM_ABAC_ENABLED=true` 后重启。开启状态会进入快照协议，旧的 ABAC-off L2 快照不会复用。
+4. 拒绝或错误突增时先关闭该环境变量并重启，恢复历史 RBAC；无需回滚 V14。用户组异常可逐组禁用。
+
+表达式只允许 `#user`、`#args`、`#p0/#a0` 和可用的方法参数名，以及比较、布尔和基础算术。
+禁止 `T(...)`、`new`、`@bean`、方法调用、赋值和 Class/Runtime 访问。求值错误按拒绝处理，日志不记录参数值。
+授权维度、全部用户属性、条件组合规则和管理端编辑步骤见 [ABAC 授权与管理指南](ABAC.md)。
 
 ---
 
@@ -204,6 +232,8 @@ Phase 3 覆盖 PC 契约、105 条单测、47 条浏览器 E2E、镜像与代理
       否则敏感字段用的是仓库里写死的开发默认密钥
 - [ ] 为生产域名配置 Casdoor `issuer` / `audience` / SPA 回调（代码与 compose 已默认 JWT）
 - [ ] `OA_IAM_ENFORCE=true`（默认已是）
+- [ ] `OA_DATA_SCOPE_STRICT=true`（默认已是；JWT 模式关闭会启动失败）
+- [ ] `oa_data_scope_missing_total` / `oa_data_scope_alias_mismatch_total` 告警已配置为任意增长即触发
 - [ ] `OA_ORG_SEED_ENABLED=false`（万人级装载接口必须关）
 - [ ] `OA_BOOTSTRAP_ADMIN` 初始化完成后清空
 - [ ] 影子校验跑满 2 周且 `oa_perm_mismatch_total` 恒为 0 后再考虑关闭

@@ -81,6 +81,8 @@
 
 ## 权限中心　`oa-iam`　:8400
 
+ABAC 接口的策略维度、表达式上下文和组合规则见 [ABAC 授权与管理指南](ABAC.md)。
+
 | 方法 | 路径 | 权限点 |
 |---|---|---|
 | GET | `/api/v1/iam/admin/bench` | oa:iam:admin |
@@ -89,6 +91,12 @@
 | GET | `/api/v1/iam/admin/preview` | oa:iam:admin |
 | POST | `/api/v1/iam/admin/reclaim-expired` | oa:iam:admin |
 | GET | `/api/v1/iam/admin/why` | oa:iam:admin |
+| DELETE | `/api/v1/iam/abac/conditions/{id}` | oa:iam:admin |
+| GET | `/api/v1/iam/abac/conditions` | oa:iam:admin |
+| POST | `/api/v1/iam/abac/conditions` | oa:iam:admin |
+| PUT | `/api/v1/iam/abac/conditions/{id}` | oa:iam:admin |
+| POST | `/api/v1/iam/abac/conditions/{id}/enabled` | oa:iam:admin |
+| POST | `/api/v1/iam/abac/validate` | oa:iam:admin |
 | GET | `/api/v1/iam/delegations` | oa:iam:delegate |
 | POST | `/api/v1/iam/delegations` | oa:iam:delegate |
 | DELETE | `/api/v1/iam/delegations/{id}` | oa:iam:delegate |
@@ -96,6 +104,13 @@
 | GET | `/api/v1/iam/grants` | oa:iam:view |
 | POST | `/api/v1/iam/grants` | oa:iam:grant |
 | DELETE | `/api/v1/iam/grants/{grantId}` | oa:iam:revoke |
+| GET | `/api/v1/iam/groups` | oa:iam:admin |
+| POST | `/api/v1/iam/groups` | oa:iam:admin |
+| PUT | `/api/v1/iam/groups/{id}` | oa:iam:admin |
+| POST | `/api/v1/iam/groups/{id}/enabled` | oa:iam:admin |
+| GET | `/api/v1/iam/groups/{id}/members` | oa:iam:admin |
+| POST | `/api/v1/iam/groups/{id}/members` | oa:iam:admin |
+| DELETE | `/api/v1/iam/groups/{id}/members/{userId}` | oa:iam:admin |
 | GET | `/api/v1/iam/permissions/catalog` | oa:iam:view |
 | GET | `/api/v1/iam/roles` | oa:iam:view |
 | GET | `/api/v1/iam/roles/mine` | oa:iam:elevate |
@@ -234,7 +249,7 @@ GET /api/v1/iam/permissions/catalog     # 需 oa:iam:view
 
 ## OpenAPI 与 TypeScript 契约
 
-`oa-app` 的字段级契约由 `GET /v3/api-docs` 提供。仓库固定了 88 条 path 的快照
+`oa-app` 的字段级契约由 `GET /v3/api-docs` 提供。仓库固定了 96 条 path 的快照
 `oa-console/openapi/oa-app.json`，并生成 `oa-console/src/shared/types/openapi.d.ts`：
 
 ```bash

@@ -3,6 +3,7 @@ package com.lrj.oa.iam.infrastructure.cache;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lrj.oa.iam.domain.PermissionSnapshot;
+import com.lrj.oa.iam.domain.AbacBranch;
 import com.lrj.oa.security.model.DataScopeRule;
 import com.lrj.oa.security.model.DataScopeType;
 import org.roaringbitmap.RoaringBitmap;
@@ -20,6 +21,8 @@ import java.util.*;
  */
 public final class SnapshotCodec {
 
+    private static final int SCHEMA_VERSION = 2;
+
     private final ObjectMapper json;
 
     public SnapshotCodec(ObjectMapper json) { this.json = json; }
@@ -28,31 +31,45 @@ public final class SnapshotCodec {
     record ScopeDto(String type, List<String> prefixes, List<Long> orgIds, String selfUserId) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record SnapshotDto(String userId, long epoch, long userVersion,
+    record SnapshotDto(int schemaVersion, String userId, long epoch, long userVersion,
                        String permBits, String elevatedBits, List<String> permCodes,
-                       ScopeDto merged, Map<String, ScopeDto> modules,
-                       List<String> delegators, long builtAt, long expireAt) {}
+                       ScopeDto merged, Map<String, ScopeDto> modules, Map<Integer, ScopeDto> permissions,
+                       List<String> delegators, boolean abacEnabled, String abacUnconditionalBits,
+                       Map<Integer, List<AbacBranch>> abacBranches,
+                       long builtAt, long expireAt) {}
 
     public String encode(PermissionSnapshot s) throws IOException {
         Map<String, ScopeDto> modules = HashMap.newHashMap(s.moduleScope().size());
         s.moduleScope().forEach((k, v) -> modules.put(k, toDto(v)));
+        Map<Integer, ScopeDto> permissions = HashMap.newHashMap(s.permissionScope().size());
+        s.permissionScope().forEach((k, v) -> permissions.put(k, toDto(v)));
         return json.writeValueAsString(new SnapshotDto(
-                s.userId(), s.epoch(), s.userVersion(),
+                SCHEMA_VERSION, s.userId(), s.epoch(), s.userVersion(),
                 encodeBitmap(s.permBits()), encodeBitmap(s.elevatedBits()),
-                List.copyOf(s.permCodes()), toDto(s.mergedScope()), modules,
-                List.copyOf(s.delegators()), s.builtAt(), s.expireAt()));
+                List.copyOf(s.permCodes()), toDto(s.mergedScope()), modules, permissions,
+                List.copyOf(s.delegators()), s.abacEnabled(), encodeBitmap(s.abacUnconditionalBits()),
+                s.abacBranches(), s.builtAt(), s.expireAt()));
     }
 
     public PermissionSnapshot decode(String payload) throws IOException {
         SnapshotDto d = json.readValue(payload, SnapshotDto.class);
+        if (d.schemaVersion() != SCHEMA_VERSION) {
+            throw new IOException("权限快照协议版本不兼容: " + d.schemaVersion());
+        }
         Map<String, DataScopeRule> modules = HashMap.newHashMap(d.modules() == null ? 0 : d.modules().size());
         if (d.modules() != null) d.modules().forEach((k, v) -> modules.put(k, fromDto(v)));
+        Map<Integer, DataScopeRule> permissions = HashMap.newHashMap(
+                d.permissions() == null ? 0 : d.permissions().size());
+        if (d.permissions() != null) d.permissions().forEach((k, v) -> permissions.put(k, fromDto(v)));
         return PermissionSnapshot.builder(d.userId())
                 .epoch(d.epoch()).userVersion(d.userVersion())
                 .rawBits(decodeBitmap(d.permBits()), decodeBitmap(d.elevatedBits()),
                         d.permCodes() == null ? List.of() : d.permCodes())
                 .rawScope(fromDto(d.merged()), modules)
+                .rawPermissionScope(permissions)
                 .delegators(d.delegators() == null ? List.of() : d.delegators())
+                .rawAbac(d.abacEnabled(), decodeBitmap(d.abacUnconditionalBits()),
+                        d.abacBranches() == null ? Map.of() : d.abacBranches())
                 .builtAt(d.builtAt()).expireAt(d.expireAt())
                 .build();
     }

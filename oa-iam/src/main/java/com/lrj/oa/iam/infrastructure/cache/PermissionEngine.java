@@ -56,6 +56,7 @@ public class PermissionEngine implements PermissionChecker {
     private final long l2TtlSeconds;
     private final boolean shadowEnabled;
     private final double shadowRate;
+    private final boolean abacEnabled;
 
     private final Cache<String, PermissionSnapshot> l1;
 
@@ -89,7 +90,8 @@ public class PermissionEngine implements PermissionChecker {
                             @Value("${oa.iam.cache.l2-enabled:true}") boolean l2Enabled,
                             @Value("${oa.iam.cache.l2-ttl-seconds:1800}") long l2TtlSeconds,
                             @Value("${oa.iam.shadow-verify.enabled:false}") boolean shadowEnabled,
-                            @Value("${oa.iam.shadow-verify.sample-rate:0.01}") double shadowRate) {
+                            @Value("${oa.iam.shadow-verify.sample-rate:0.01}") double shadowRate,
+                            @Value("${oa.iam.abac.enabled:false}") boolean abacEnabled) {
         this.builder = builder;
         this.catalog = catalog;
         this.versionMapper = versionMapper;
@@ -99,6 +101,7 @@ public class PermissionEngine implements PermissionChecker {
         this.l2TtlSeconds = l2TtlSeconds;
         this.shadowEnabled = shadowEnabled;
         this.shadowRate = shadowRate;
+        this.abacEnabled = abacEnabled;
         this.l1 = Caffeine.newBuilder()
                 .maximumSize(l1MaxSize)
                 .expireAfterWrite(Duration.ofMillis(ttlMs))
@@ -161,8 +164,9 @@ public class PermissionEngine implements PermissionChecker {
     }
 
     @Override
-    public DataScopeRule dataScope(String userId, String module) {
-        return snapshot(userId).scopeOf(module);
+    public DataScopeRule dataScopeForPermission(String userId, String permissionCode) {
+        int permId = catalog.idOf(permissionCode);
+        return snapshot(userId).scopeOfPermission(permId);
     }
 
     @Override
@@ -196,8 +200,8 @@ public class PermissionEngine implements PermissionChecker {
         return s;
     }
 
-    private static boolean fresh(PermissionSnapshot s, long epoch, long now) {
-        return s != null && s.epoch() == epoch && !s.expired(now);
+    private boolean fresh(PermissionSnapshot s, long epoch, long now) {
+        return s != null && s.epoch() == epoch && s.abacEnabled() == abacEnabled && !s.expired(now);
     }
 
     /** 全局 epoch，本地缓存 1 秒。收到失效通知时立刻作废重取。 */

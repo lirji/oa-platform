@@ -40,19 +40,42 @@ public interface GrantMapper extends BaseMapper<GrantRecord> {
                  OR (subject_type = 'POSITION' AND subject_id IN
                      <foreach item="p" collection="positionIds" open="(" separator="," close=")">#{p}</foreach>)
                 </if>
-                 OR (subject_type = 'USER_GROUP')
+                <if test="groupIds != null and groupIds.size() > 0">
+                 OR (subject_type = 'USER_GROUP' AND subject_id IN
+                     <foreach item="g" collection="groupIds" open="(" separator="," close=")">#{g}</foreach>)
+                </if>
                )
             </script>
             """)
     List<GrantRecord> selectApplicable(@Param("userId") String userId,
                                        @Param("orgIds") Collection<String> orgIds,
                                        @Param("positionIds") Collection<String> positionIds,
+                                       @Param("groupIds") Collection<String> groupIds,
                                        @Param("now") OffsetDateTime now);
 
     /** 下一个会改变判定结果的时间点（最近的 valid_to）。快照 TTL 不能越过它。 */
     @Select("""
             <script>
-            SELECT min(valid_to) FROM oa_iam.grant_record
+            SELECT min(boundary) FROM (
+            SELECT valid_from AS boundary FROM oa_iam.grant_record
+             WHERE revoked_at IS NULL AND valid_from &gt; #{now}
+               AND (
+                    (subject_type = 'USER' AND subject_id = #{userId})
+                <if test="orgIds != null and orgIds.size() > 0">
+                 OR (subject_type = 'ORG_UNIT' AND subject_id IN
+                     <foreach item="o" collection="orgIds" open="(" separator="," close=")">#{o}</foreach>)
+                </if>
+                <if test="positionIds != null and positionIds.size() > 0">
+                 OR (subject_type = 'POSITION' AND subject_id IN
+                     <foreach item="p" collection="positionIds" open="(" separator="," close=")">#{p}</foreach>)
+                </if>
+                <if test="groupIds != null and groupIds.size() > 0">
+                 OR (subject_type = 'USER_GROUP' AND subject_id IN
+                     <foreach item="g" collection="groupIds" open="(" separator="," close=")">#{g}</foreach>)
+                </if>
+               )
+            UNION ALL
+            SELECT valid_to AS boundary FROM oa_iam.grant_record
              WHERE revoked_at IS NULL AND valid_to IS NOT NULL AND valid_to &gt; #{now}
                AND (
                     (subject_type = 'USER' AND subject_id = #{userId})
@@ -60,11 +83,22 @@ public interface GrantMapper extends BaseMapper<GrantRecord> {
                  OR (subject_type = 'ORG_UNIT' AND subject_id IN
                      <foreach item="o" collection="orgIds" open="(" separator="," close=")">#{o}</foreach>)
                 </if>
+                <if test="positionIds != null and positionIds.size() > 0">
+                 OR (subject_type = 'POSITION' AND subject_id IN
+                     <foreach item="p" collection="positionIds" open="(" separator="," close=")">#{p}</foreach>)
+                </if>
+                <if test="groupIds != null and groupIds.size() > 0">
+                 OR (subject_type = 'USER_GROUP' AND subject_id IN
+                     <foreach item="g" collection="groupIds" open="(" separator="," close=")">#{g}</foreach>)
+                </if>
                )
+            ) boundaries
             </script>
             """)
     OffsetDateTime nextBoundary(@Param("userId") String userId,
                                 @Param("orgIds") Collection<String> orgIds,
+                                @Param("positionIds") Collection<String> positionIds,
+                                @Param("groupIds") Collection<String> groupIds,
                                 @Param("now") OffsetDateTime now);
 
     @Select("SELECT * FROM oa_iam.grant_record WHERE subject_type = #{type} AND subject_id = #{id} AND revoked_at IS NULL ORDER BY id DESC")

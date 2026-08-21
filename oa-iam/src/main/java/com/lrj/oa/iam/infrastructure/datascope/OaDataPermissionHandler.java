@@ -8,6 +8,7 @@ import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -33,25 +34,68 @@ public class OaDataPermissionHandler implements MultiDataPermissionHandler {
     /** 路径由建表 CHECK 约束保证只含数字与斜杠；这里再挡一道，杜绝任何拼接注入的可能。 */
     private static final Pattern SAFE_PATH = Pattern.compile("^/[0-9/]*$");
 
+    private final DataScopeMetrics metrics;
+    private final GovernedTableRegistry governedTables;
+
+    @Autowired
+    public OaDataPermissionHandler(DataScopeMetrics metrics, GovernedTableRegistry governedTables) {
+        this.metrics = metrics;
+        this.governedTables = governedTables;
+    }
+
+    /** 仅供不启动 Spring 的 SQL 单元测试使用。 */
+    public OaDataPermissionHandler() {
+        this(DataScopeMetrics.noop(), new GovernedTableRegistry());
+    }
+
+    public OaDataPermissionHandler(DataScopeMetrics metrics) {
+        this(metrics, new GovernedTableRegistry());
+    }
+
     @Override
     public Expression getSqlSegment(Table table, Expression where, String mappedStatementId) {
+        String tableName = table.getFullyQualifiedName();
         DataScopeContext.Active active = DataScopeContext.peek();
-        if (active == null) return null;           // 没标 @DataScope 的查询不受影响
+        if (active == null) {
+            if (governedTables.contains(tableName)) {
+                metrics.missing();
+                metrics.denied();
+                throw new IllegalStateException("受管表缺少 @DataScope 上下文: table=" + tableName
+                        + " statement=" + mappedStatementId);
+            }
+            return null;
+        }
 
         DataScope ann = active.annotation();
         DataScopeRule rule = active.rule();
 
-        // 只对注解指定的那张表（别名）注入，不能误伤 join 进来的其它表
-        String alias = table.getAlias() == null ? table.getName() : table.getAlias().getName();
-        if (alias == null || !alias.equalsIgnoreCase(ann.alias())) return null;
+        active.seen(tableName);
+        if (!active.targets(tableName)) return null;
 
-        String condition = buildCondition(ann, rule);
-        if (condition == null) return null;        // ALL：不加任何条件
+        // 目标表必须使用声明的别名；错配不能静默放行。
+        String alias = table.getAlias() == null ? table.getName() : table.getAlias().getName();
+        if (alias == null || !alias.equalsIgnoreCase(ann.alias())) {
+            metrics.aliasMismatch();
+            metrics.denied();
+            throw new IllegalStateException("数据权限目标表别名不匹配: table=" + tableName
+                    + " expected=" + ann.alias() + " actual=" + alias);
+        }
+
+        String condition;
+        try {
+            condition = buildCondition(ann, rule);
+        } catch (RuntimeException e) {
+            metrics.denied();
+            throw e;
+        }
+        active.evaluated(condition != null);       // ALL 也必须记为明确求值，而不是未执行
+        if (condition == null) return null;
 
         try {
             return CCJSqlParserUtil.parseCondExpression(condition);
         } catch (Exception e) {
             // 解析失败绝不能"放行"——那等于关掉数据权限。宁可让查询失败。
+            metrics.denied();
             log.error("数据权限条件解析失败，拒绝执行该查询: {}", condition, e);
             throw new IllegalStateException("数据权限条件非法: " + condition, e);
         }

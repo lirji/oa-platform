@@ -27,8 +27,8 @@ public interface PermissionChecker {
      */
     boolean isElevated(String userId, String permCode);
 
-    /** 取用户在某模块下的数据范围规则；module 为空则取合并后的最宽范围。 */
-    DataScopeRule dataScope(String userId, String module);
+    /** 取用户通过指定权限点获得的数据范围规则；未知或未持有权限时返回 NONE。 */
+    DataScopeRule dataScopeForPermission(String userId, String permissionCode);
 
     /** 我正在代理谁（委托关系）。待办查询用它扩展 assignee 集合。 */
     Collection<String> delegators(String userId);

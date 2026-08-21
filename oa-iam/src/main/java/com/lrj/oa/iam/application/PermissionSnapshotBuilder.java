@@ -1,15 +1,13 @@
 package com.lrj.oa.iam.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lrj.oa.iam.domain.GrantRecord;
-import com.lrj.oa.iam.domain.GrantType;
-import com.lrj.oa.iam.domain.PermissionSnapshot;
-import com.lrj.oa.iam.domain.SubjectType;
+import com.lrj.oa.iam.domain.*;
 import com.lrj.oa.iam.infrastructure.mapper.*;
 import com.lrj.oa.org.api.OrgQueryApi;
 import com.lrj.oa.org.api.dto.AssignmentView;
 import com.lrj.oa.security.model.DataScopeRule;
 import com.lrj.oa.security.model.DataScopeType;
+import com.lrj.oa.common.context.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,21 +33,29 @@ public class PermissionSnapshotBuilder {
     private final DelegationMapper delegationMapper;
     private final PermVersionMapper versionMapper;
     private final PermissionCatalog catalog;
+    private final UserGroupMapper userGroupMapper;
+    private final PermissionConditionMapper conditionMapper;
     private final ObjectMapper json;
     private final long ttlMs;
+    private final boolean abacEnabled;
 
     public PermissionSnapshotBuilder(OrgQueryApi orgQuery, GrantMapper grantMapper, RoleMapper roleMapper,
                                      DelegationMapper delegationMapper, PermVersionMapper versionMapper,
-                                     PermissionCatalog catalog, ObjectMapper json,
-                                     @Value("${oa.iam.cache.ttl-ms:300000}") long ttlMs) {
+                                     PermissionCatalog catalog, UserGroupMapper userGroupMapper,
+                                     PermissionConditionMapper conditionMapper, ObjectMapper json,
+                                     @Value("${oa.iam.cache.ttl-ms:300000}") long ttlMs,
+                                     @Value("${oa.iam.abac.enabled:false}") boolean abacEnabled) {
         this.orgQuery = orgQuery;
         this.grantMapper = grantMapper;
         this.roleMapper = roleMapper;
         this.delegationMapper = delegationMapper;
         this.versionMapper = versionMapper;
         this.catalog = catalog;
+        this.userGroupMapper = userGroupMapper;
+        this.conditionMapper = conditionMapper;
         this.json = json;
         this.ttlMs = ttlMs;
+        this.abacEnabled = abacEnabled;
     }
 
     public PermissionSnapshot build(String userId) {
@@ -65,7 +71,7 @@ public class PermissionSnapshotBuilder {
         } catch (Exception e) {
             // 账号存在但没有员工档案（外部账号 / 还没入职）：给空快照，而不是放行
             log.debug("用户 {} 没有任职记录，返回空快照", userId);
-            return PermissionSnapshot.empty(userId, epoch, userVersion, ttlMs);
+            return PermissionSnapshot.empty(userId, epoch, userVersion, ttlMs, abacEnabled);
         }
 
         // 授权主体匹配用【全部】任职组织（含虚线：矩阵组织里挂虚线也可能带角色）；
@@ -86,14 +92,19 @@ public class PermissionSnapshotBuilder {
             for (Long a : orgQuery.ancestorIds(o)) orgSubjects.add(String.valueOf(a));
         }
 
-        List<GrantRecord> grants = grantMapper.selectApplicable(userId, orgSubjects, positionIds, now);
+        Set<String> groupIds = new LinkedHashSet<>();
+        for (Long id : userGroupMapper.selectActiveGroupIds(TenantContext.get(), userId, now)) {
+            groupIds.add(String.valueOf(id));
+        }
+
+        List<GrantRecord> grants = grantMapper.selectApplicable(userId, orgSubjects, positionIds, groupIds, now);
 
         PermissionSnapshot.Builder sb = PermissionSnapshot.builder(userId)
-                .epoch(epoch).userVersion(userVersion);
+                .epoch(epoch).userVersion(userVersion).abacEnabled(abacEnabled);
 
         List<GrantRecord> applicable = new ArrayList<>(grants.size());
         for (GrantRecord g : grants) {
-            if (!applies(g, directOrgIds)) continue;
+            if (!applies(g, directOrgIds, groupIds)) continue;
             applicable.add(g);
         }
 
@@ -108,6 +119,15 @@ public class PermissionSnapshotBuilder {
                         .add(row.getPermissionId().intValue());
             }
 
+            Map<RolePermission, List<AbacBranch.Condition>> conditions = new HashMap<>();
+            if (abacEnabled) {
+                for (PermissionCondition condition : conditionMapper.selectEnabledForRoles(TenantContext.get(), roleIds)) {
+                    int permId = Math.toIntExact(condition.getPermissionId());
+                    conditions.computeIfAbsent(new RolePermission(condition.getRoleId(), permId), ignored -> new ArrayList<>())
+                            .add(new AbacBranch.Condition(condition.getId(), condition.getExpression(), condition.getDescription()));
+                }
+            }
+
             for (GrantRecord g : applicable) {
                 Set<Integer> perms = permsByRole.getOrDefault(g.getRoleId(), Set.of());
                 if (perms.isEmpty()) continue;
@@ -115,16 +135,17 @@ public class PermissionSnapshotBuilder {
                 DataScopeRule rule = resolveScope(g, scopeOrgIds, userId);
                 boolean temporary = g.grantTypeEnum() == GrantType.TEMPORARY;
 
-                Set<String> touchedModules = new HashSet<>();
                 for (int permId : perms) {
                     sb.addPerm(permId, catalog.codeOf(permId));
+                    if (abacEnabled) {
+                        List<AbacBranch.Condition> rules = conditions.get(new RolePermission(g.getRoleId(), permId));
+                        if (rules == null || rules.isEmpty()) sb.markAbacUnconditional(permId);
+                        else sb.addAbacBranch(permId, new AbacBranch(g.getRoleId(), rules));
+                    }
                     if (temporary) sb.addElevated(permId);
                     String module = catalog.moduleOf(permId);
-                    if (module != null) touchedModules.add(module);
+                    sb.scope(permId, module, rule);
                 }
-                // 这条授权的作用域，落到它所触及的每个模块上
-                sb.scope(null, rule);
-                for (String m : touchedModules) sb.scope(m, rule);
             }
         }
 
@@ -132,7 +153,9 @@ public class PermissionSnapshotBuilder {
 
         // ★ TTL 不能越过最近一条临时授权的到期时刻，否则过期提权会被继续放行
         long expireAt = System.currentTimeMillis() + ttlMs;
-        OffsetDateTime boundary = grantMapper.nextBoundary(userId, orgSubjects, now);
+        OffsetDateTime boundary = minBoundary(
+                grantMapper.nextBoundary(userId, orgSubjects, positionIds, groupIds, now),
+                userGroupMapper.nextMembershipBoundary(TenantContext.get(), userId, now));
         if (boundary != null) {
             long boundaryMs = boundary.toInstant().toEpochMilli();
             if (boundaryMs < expireAt) expireAt = boundaryMs;
@@ -151,7 +174,7 @@ public class PermissionSnapshotBuilder {
      * <p>核心是"部门权限继承"的第一层含义：授权落在<b>本人所在组织</b>时永远适用；
      * 落在<b>上级组织</b>时，只有 {@code include_descendants = true} 才向下惠及。
      */
-    private boolean applies(GrantRecord g, Set<Long> directOrgIds) {
+    private boolean applies(GrantRecord g, Set<Long> directOrgIds, Set<String> groupIds) {
         SubjectType type;
         try {
             type = g.subjectTypeEnum();
@@ -167,12 +190,7 @@ public class PermissionSnapshotBuilder {
                 if (directOrgIds.contains(subjectOrg)) yield true;      // 正好授在本人所在组织
                 yield Boolean.TRUE.equals(g.getIncludeDescendants());   // 授在上级：看是否向下继承
             }
-            // 动态人群需要一张 user_group 表，属于 Phase 3。这里明确跳过并告警，
-            // 而不是静默当成"适用"或"不适用"——两种静默都会让人查半天。
-            case USER_GROUP -> {
-                log.warn("授权 {} 使用了 USER_GROUP 主体，Phase 2 尚未实现人群解析，已跳过", g.getId());
-                yield false;
-            }
+            case USER_GROUP -> groupIds.contains(g.getSubjectId());
         };
     }
 
@@ -223,4 +241,12 @@ public class PermissionSnapshotBuilder {
     private static Long parseLong(String s) {
         try { return Long.valueOf(s); } catch (Exception e) { return null; }
     }
+
+    private static OffsetDateTime minBoundary(OffsetDateTime a, OffsetDateTime b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isBefore(b) ? a : b;
+    }
+
+    private record RolePermission(long roleId, int permissionId) {}
 }
