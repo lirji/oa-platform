@@ -114,8 +114,9 @@ L2 用 JSON 而不是 Kryo/Protobuf：它不在热路径上（命中 L1 就走�
 
 | 类型 | 落点 | 是否安全边界 |
 |---|---|---|
-| **接口权限** | `@RequiresPerm` 切面 + fail-closed 拦截器兜底 | ✅ **唯一安全边界** |
-| **数据权限** | 权限点级 `@DataScope` + 严格 SQL 消费协议 + `@Sensitive`（列级） | ⚠️ 平台能力已强制，业务覆盖迁移中 |
+| **接口权限** | `@RequiresPerm` 切面 + fail-closed 拦截器兜底 | ✅ 能否调用的后端安全边界 |
+| **数据权限** | 权限点级 `@DataScope` + 严格 SQL 消费协议 | ✅ 已迁移查询的行级安全边界；业务覆盖迁移中 |
+| **字段权限** | `@Sensitive` + FIELD 权限 | ✅ 已标注敏感字段的明文边界 |
 | **页面权限** | 后端下发 permCodes/菜单，前端裁剪展示 | ❌ 仅体验 |
 
 接口权限已有构建期覆盖测试、API Golden 和运行期未声明拒绝三道门禁。数据权限平台层现在按
@@ -128,6 +129,8 @@ L2 用 JSON 而不是 Kryo/Protobuf：它不在热路径上（命中 L1 就走�
 类直接使用 JDBC；`JdbcBypassArchitectureTest` 已冻结这份债务，任何新增都会使 CI 失败，但这些既有路径
 仍要按模块迁移后，才能宣称所有业务数据已全局覆盖。完整清单、阶段和验收标准见
 [接口权限与数据权限全局保障方案](plans/data-permission-global-guard/FINAL_PLAN.md)。
+RBAC、ABAC、接口、数据和字段权限的完整调用链与编辑入口见
+[权限体系与全局保障指南](AUTHORIZATION.md)。
 
 ### 数据权限怎么翻译成 SQL
 
@@ -264,6 +267,7 @@ OpenAPI 快照生成 `oa-console/src/shared/types/openapi.d.ts` 并参与类型�
 - `OA_IAM_ABAC_ENABLED=false` 为默认兼容模式；先配置/审查策略，再按环境开启并监控
   `oa_iam_abac_{evaluations,denied,errors}_total`。
 
+权限层次、RBAC 编辑边界和数据权限覆盖现状见 [权限体系与全局保障指南](AUTHORIZATION.md)；
 ABAC 的完整属性清单、组合规则、表达式限制和编辑流程见 [ABAC 授权与管理指南](ABAC.md)。
 
 ## 9. 明确没做的

@@ -146,7 +146,7 @@ OA_NOTIFY_BASE=http://localhost:8401 OA_ADMIN=seed-user-1 \
 | 检查 | 守什么 |
 |---|---|
 | `ControllerPermissionCoverageTest` / `*AuthorizationStanceTest` | 每个 handler 必须声明授权立场；**四个可部署单元都覆盖** |
-| `ApiSurfaceGoldenTest` | 冻结 120 个端点的「路径 → 权限点」，偷改会让构建失败 |
+| `ApiSurfaceGoldenTest` / 各服务 API Golden | 冻结 135 个端点的「方法 + 路径 → 权限点/公开立场」，偷改会让构建失败 |
 | `DataAccessSurfaceGoldenTest` | 冻结已迁移数据方法的「权限点 → 目标表 → 模式」 |
 | `JdbcBypassArchitectureTest` | application/web 直接 JDBC 迁移基线只能减少，禁止新增或关闭数据权限拦截器 |
 | `ArchitectureRulesTest` | 跨模块只走 `..api..`；Controller 不直连 Mapper |
@@ -198,9 +198,9 @@ oa-mobile          员工 H5 :5474 / :8405（待办、打卡、通讯录、公�
 
 ## 四条不可动摇的纪律
 
-1. **接口权限是唯一安全边界。** 前端的菜单/按钮裁剪只是体验。每个 handler 必须有
+1. **后端授权才是安全边界。** 前端的菜单/按钮裁剪只是体验。每个 handler 必须有
    `@RequiresPerm` 或 `@PublicApi(reason=…)` —— `ControllerPermissionCoverageTest` 会让构建失败，
-   运行期还有 fail-closed 拦截器兜底。
+   运行期还有 fail-closed 拦截器兜底；返回业务数据的查询还要进入 `@DataScope` 行级协议。
 2. **跨模块只能走 `..api..`。** 直接注入对方 Mapper/Entity 会被 `ArchitectureRulesTest` 拦下。
 3. **业务单据表必须冗余 `org_id` + `org_path`**，且 `org_path` 索引必须是 `text_pattern_ops`
    （PG 非 C locale 下普通索引不走前缀 LIKE）。
@@ -213,6 +213,7 @@ oa-mobile          员工 H5 :5474 / :8405（待办、打卡、通讯录、公�
 | 文档 | 内容 |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构全景：组织建模、判权引擎、三类权限、审批链路、削峰 |
+| [docs/AUTHORIZATION.md](docs/AUTHORIZATION.md) | 权限总指南：RBAC、ABAC、接口/数据/字段权限、编辑入口与全局保障边界 |
 | [docs/ABAC.md](docs/ABAC.md) | ABAC 授权维度、表达式上下文、组合规则、启停和管理端编辑指南 |
 | [docs/ADR.md](docs/ADR.md) | 决策记录，含**被否掉的方案**与实现期新增的决策 |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | 运维手册：启停、排障、**踩过的坑清单** |

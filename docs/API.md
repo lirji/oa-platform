@@ -1,13 +1,16 @@
 # 接口清单
 
 > **由源码抽取生成**（扫描全部 `@RestController` 的 `@RequestMapping` + 各 handler 的
-> `@RequiresPerm` / `@PublicApi`），与代码保持一致。共 **122 个 handler**。
+> `@RequiresPerm` / `@PublicApi`），与代码保持一致。四个可部署后端共 **135 个 handler**。
 >
 > 这是一份**权限点对照表**：回答"这个接口需要什么权限"。
 > 请求/响应的字段契约以 **`GET :8400/v3/api-docs`**（springdoc，含 75 个 schema）为准，
 > 前端可直接用它生成 TS 类型。
 
 ## 通用约定
+
+RBAC、ABAC、接口权限、数据权限和字段权限的执行顺序、管理方式与覆盖边界见
+[权限体系与全局保障指南](AUTHORIZATION.md)。本页只维护端点与权限点对照。
 
 - 统一响应体 `Result{ code, message, data, traceId }`，`code: 0` 表示成功。
   **例外**：`GET /api/v1/file/{id}/download` 返回裸二进制（`Content-Disposition` 按 RFC 5987 编码中文名），
@@ -98,6 +101,7 @@ ABAC 接口的策略维度、表达式上下文和组合规则见 [ABAC 授权�
 | POST | `/api/v1/iam/abac/conditions/{id}/enabled` | oa:iam:admin |
 | POST | `/api/v1/iam/abac/validate` | oa:iam:admin |
 | GET | `/api/v1/iam/delegations` | oa:iam:delegate |
+| GET | `/api/v1/iam/elevations/mine` | oa:iam:elevate |
 | POST | `/api/v1/iam/delegations` | oa:iam:delegate |
 | DELETE | `/api/v1/iam/delegations/{id}` | oa:iam:delegate |
 | POST | `/api/v1/iam/elevations` | oa:iam:elevate |
@@ -235,7 +239,7 @@ ABAC 接口的策略维度、表达式上下文和组合规则见 [ABAC 授权�
 
 ## 权限点目录
 
-全部 65 个权限点（含 9 个 MENU、2 个 FIELD、其余 API）可在运行时查：
+全部 66 个权限点（含 9 个 MENU、2 个 FIELD、55 个 API）可在运行时查：
 
 ```
 GET /api/v1/iam/permissions/catalog     # 需 oa:iam:view

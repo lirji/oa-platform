@@ -35,8 +35,8 @@ public @interface DataScope {
     String userColumn() default "creator_id";
 
     /**
-     * 模块 key。用户的数据范围可按模块细分
-     * （例：考勤=全公司只读、报销=本部门），留空则用合并后的最宽范围。
+     * 模块 key，仅保留作迁移兼容和诊断元数据。
+     * 严格判权只按 {@link #permission()} 读取权限点级范围，不能回退到模块或全局最宽范围。
      */
     String module() default "";
 }
