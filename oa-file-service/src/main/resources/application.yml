@@ -1,6 +1,7 @@
 server:
   port: ${OA_FILE_PORT:8402}
   shutdown: graceful
+  max-http-request-header-size: 64KB
 
 spring:
   application:
@@ -37,7 +38,10 @@ management:
 
 oa:
   security:
-    mode: ${OA_SECURITY_MODE:DEV}
+    mode: ${OA_SECURITY_MODE:JWT}
+    jwk-set-uri: ${OA_JWT_JWKS:http://localhost:8000/.well-known/jwks}
+    issuer: ${OA_JWT_ISSUER:http://localhost:8000}
+    audience: ${OA_JWT_AUDIENCE:}
   file:
     endpoint: ${OA_MINIO_ENDPOINT:http://localhost:39000}
     access-key: ${OA_MINIO_ROOT_USER:oaminio}

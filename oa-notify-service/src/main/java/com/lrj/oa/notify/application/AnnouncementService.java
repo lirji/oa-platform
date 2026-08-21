@@ -132,23 +132,27 @@ public class AnnouncementService {
     }
 
     public List<NotifyDtos.AnnouncementView> list(String userId, int limit) {
-        List<NotifyDtos.AnnouncementView> out = new ArrayList<>();
-        jdbc.query("""
+        // 先完整取出并关闭外层 ResultSet，再查已读位图；禁止在 RowCallback 内嵌 JDBC。
+        List<NotifyDtos.AnnouncementView> rows = jdbc.query("""
                 SELECT id, title, content, publisher_id, publisher_name, audience_count,
                        status, published_at, expire_at
                   FROM oa_notify.announcement
                  WHERE status = 'PUBLISHED' AND (expire_at IS NULL OR expire_at > now())
                  ORDER BY published_at DESC LIMIT ?
-                """, rs -> {
-            long id = rs.getLong("id");
-            out.add(new NotifyDtos.AnnouncementView(id, rs.getString("title"), rs.getString("content"),
+                """, (rs, rowNum) -> new NotifyDtos.AnnouncementView(
+                    rs.getLong("id"), rs.getString("title"), rs.getString("content"),
                     rs.getString("publisher_id"), rs.getString("publisher_name"),
                     rs.getInt("audience_count"), rs.getString("status"),
                     rs.getObject("published_at", OffsetDateTime.class),
-                    rs.getObject("expire_at", OffsetDateTime.class),
-                    userId == null ? null : hasRead(id, userId)));
-        }, Math.min(Math.max(limit, 1), 100));
-        return out;
+                    rs.getObject("expire_at", OffsetDateTime.class), null),
+                Math.min(Math.max(limit, 1), 100));
+        if (userId == null || rows.isEmpty()) return rows;
+
+        int recipientSeq = recipients.resolveOne(userId);
+        var read = receipts.hasRead(rows.stream().map(NotifyDtos.AnnouncementView::id).toList(), recipientSeq);
+        return rows.stream().map(v -> new NotifyDtos.AnnouncementView(
+                v.id(), v.title(), v.content(), v.publisherId(), v.publisherName(), v.audienceCount(),
+                v.status(), v.publishedAt(), v.expireAt(), read.getOrDefault(v.id(), false))).toList();
     }
 
     @Transactional

@@ -1,7 +1,7 @@
 # 接口清单
 
 > **由源码抽取生成**（扫描全部 `@RestController` 的 `@RequestMapping` + 各 handler 的
-> `@RequiresPerm` / `@PublicApi`），与代码保持一致。共 **120 个 handler**。
+> `@RequiresPerm` / `@PublicApi`），与代码保持一致。共 **122 个 handler**。
 >
 > 这是一份**权限点对照表**：回答"这个接口需要什么权限"。
 > 请求/响应的字段契约以 **`GET :8400/v3/api-docs`**（springdoc，含 75 个 schema）为准，
@@ -16,7 +16,11 @@
   403 里混了 3001/3002/3003/3004/3005，409 里混了 2002/2003/2011/5001。
 - 每个响应都带 **`X-OA-Perm-Version`** 头（`epoch*1e6 + userVersion`）。
   前端比对它就知道权限变了 —— 零额外请求。403 上也带，能区分"权限刚被改"与"本来就没有"。
-- **身份**：DEV 模式取 `X-OA-User` 头；JWT 模式取 `jwt.sub`（Casdoor sub，UUID 字符串）。
+- **身份**：生产默认 JWT，校验 Casdoor 签名、`iss`、`aud` 后取 `jwt.sub`（UUID 字符串）；
+  DEV 模式才读取 `X-OA-User`，JWT 模式对该头 fail-closed，不允许覆盖身份。
+- **浏览器 WebSocket**：先用 Bearer JWT 调 `POST /api/v1/notify/ws-ticket`，再连接
+  `/ws?ticket=<一次性票据>`。票据默认 30 秒、绑定用户/租户、Redis 原子消费且不可重放；
+  禁止把 access token 或 `userId` 放进 URL。
 - **`★需提权`** 表示该权限点 `require_elevation=true`：持有永久授权仍会被拒（3002），
   必须先 `POST /api/v1/iam/elevations` 申请一条活跃的 JIT 提权。
 - **数据权限不抛错**：算不出范围时 SQL 生成 `1 = 0`，接口返回 **200 + 空数组**。
@@ -187,6 +191,7 @@
 | GET | `/api/v1/notify/messages/unread-count` | oa:notify:read |
 | POST | `/api/v1/notify/messages/{id}/read` | oa:notify:read |
 | GET | `/api/v1/notify/ping` | (公开) |
+| POST | `/api/v1/notify/ws-ticket` | oa:notify:read |
 | GET | `/api/v1/notify/ws-stats` | oa:notify:send |
 
 ## 文件服务（独立服务）　`oa-file-service`　:8402
@@ -226,3 +231,16 @@ GET /api/v1/iam/permissions/catalog     # 需 oa:iam:view
 
 菜单树直接来自 `GET /api/v1/me/permissions` 的 `menus` 字段，已带路由与图标 ——
 前端**不需要**再维护第二份菜单定义。
+
+## OpenAPI 与 TypeScript 契约
+
+`oa-app` 的字段级契约由 `GET /v3/api-docs` 提供。仓库固定了 88 条 path 的快照
+`oa-console/openapi/oa-app.json`，并生成 `oa-console/src/shared/types/openapi.d.ts`：
+
+```bash
+cd oa-console
+pnpm gen:api:fetch   # 后端运行时有意更新快照和类型
+pnpm gen:api:check   # CI：快照重生成后必须零漂移
+```
+
+独立通知、文件和跑批服务的路径由本页与各服务 `api-surface.golden` 守护；当前 TS 快照仅针对主应用。

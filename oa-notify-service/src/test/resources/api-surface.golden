@@ -10,3 +10,4 @@ POST   /api/v1/announcements/{id}/revoke                    oa:announce:revoke
 POST   /api/v1/notify/messages                              oa:notify:send
 POST   /api/v1/notify/messages/read-all                     oa:notify:read
 POST   /api/v1/notify/messages/{id}/read                    oa:notify:read
+POST   /api/v1/notify/ws-ticket                             oa:notify:read

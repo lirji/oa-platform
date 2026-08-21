@@ -1,0 +1,32 @@
+:root { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; color: #172033; background: #f4f6fa; font-synthesis: none; }
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; min-width: 320px; min-height: 100%; }
+body { min-height: 100vh; background: linear-gradient(180deg, #eaf3ff 0, #f4f6fa 180px); }
+button, input { font: inherit; }
+.app-shell { min-height: 100vh; display: grid; grid-template-rows: 45px 1fr auto; }
+.app-shell > header { position: sticky; z-index: 20; top: 0; background: rgba(255,255,255,.92); backdrop-filter: blur(12px); border-bottom: 1px solid #edf0f5; }
+.app-shell > main { min-width: 0; padding-bottom: 12px; }
+.app-shell > footer { position: sticky; z-index: 20; bottom: 0; background: rgba(255,255,255,.96); border-top: 1px solid #e8ecf2; }
+.account-name { max-width: 96px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7b8497; font-size: 12px; }
+.page-content, .page-list { padding: 12px; display: grid; gap: 12px; }
+.page-list { padding-left: 0; padding-right: 0; }
+.page-state, .center { min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+.page-empty { padding: 72px 0; }
+.hero-card { overflow: hidden; background: linear-gradient(145deg, #fff, #f2f8ff); }
+.today-date { color: #7d879b; }
+.punch-actions { padding: 24px 0 16px; }
+.punch-actions .adm-button { width: 120px; height: 52px; box-shadow: 0 8px 20px rgba(22,119,255,.16); }
+.location-note { margin: 8px 0 0; text-align: center; color: #9ba3b2; font-size: 12px; }
+.flat-card { border: 0; padding: 0; }
+.todo-item .adm-list-item-content-main { min-width: 0; }
+.todo-actions { margin-top: 12px; justify-content: flex-end; }
+.scope-row { padding-top: 10px; }
+.contact-line { margin-top: 4px; color: #7d879b; font-size: 12px; }
+.announcement-list .adm-card { box-shadow: 0 4px 16px rgba(25,45,80,.06); }
+.announcement-content { white-space: pre-wrap; line-height: 1.7; color: #4d586c; }
+.card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #929aab; font-size: 12px; }
+.unread-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #1677ff; vertical-align: middle; }
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 15%, #b9dbff, #edf5ff 35%, #f6f7fb 70%); }
+.login-page .adm-card { width: min(100%, 420px); padding: 20px; box-shadow: 0 18px 50px rgba(31,78,140,.14); }
+.danger-text { color: #d4380d; }
+@media (min-width: 720px) { .app-shell { width: 480px; margin: 0 auto; box-shadow: 0 0 40px rgba(20,40,80,.08); } }

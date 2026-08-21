@@ -31,6 +31,11 @@ public class LocalWorkflowGateway implements WorkflowGateway {
     private final Map<String, TaskState> tasks = new ConcurrentHashMap<>();
     private final Map<String, Instance> instances = new ConcurrentHashMap<>();
     private final AtomicLong seq = new AtomicLong();
+    /**
+     * LOCAL 状态虽然在内存里，但 process/task id 会被投影进数据库。仅使用从 1 开始的序号，
+     * 应用每次重启都会复用旧 id，随后按 process_instance_id 回查会命中多行。
+     */
+    private final String runId = UUID.randomUUID().toString().substring(0, 12);
 
     /** 流程实例被推进后的回调（由 ApprovalService 注入，用于回写 OA 侧状态）。 */
     public interface Callback {
@@ -58,20 +63,22 @@ public class LocalWorkflowGateway implements WorkflowGateway {
 
     /** 由 ApprovalService 在发件箱投递成功后调用，模拟中台收到 start 命令。 */
     public String startProcess(String definitionKey, String businessKey, List<String> approverChain) {
-        String pid = "local-pi-" + seq.incrementAndGet();
+        String pid = "local-pi-" + runId + "-" + seq.incrementAndGet();
         instances.put(pid, new Instance(pid, definitionKey, businessKey, List.copyOf(approverChain), 0));
-        createTaskFor(pid, 0);
+        // 首任务要等 ApprovalService 把 pid 回绑审批实例后再投影，否则 todo 会永久缺少
+        // instance/bizType/applicant 等字段。后续节点已经有绑定，可以立即回调。
+        createTaskFor(pid, 0, false);
         return pid;
     }
 
-    private void createTaskFor(String pid, int index) {
+    private void createTaskFor(String pid, int index, boolean notify) {
         Instance ins = instances.get(pid);
         if (ins == null || index >= ins.chain.size()) return;
-        String taskId = "local-task-" + seq.incrementAndGet();
+        String taskId = "local-task-" + runId + "-" + seq.incrementAndGet();
         Task t = new Task(taskId, pid, ins.definitionKey, ins.businessKey,
                 "第 " + (index + 1) + " 级审批", ins.chain.get(index), null);
         tasks.put(taskId, new TaskState(t, index));
-        callback.onTaskCreated(t);
+        if (notify) callback.onTaskCreated(t);
     }
 
     @Override
@@ -107,7 +114,7 @@ public class LocalWorkflowGateway implements WorkflowGateway {
             instances.remove(pid);
             callback.onFinished(pid, "APPROVED");
         } else {
-            createTaskFor(pid, next);
+            createTaskFor(pid, next, true);
         }
     }
 

@@ -172,10 +172,10 @@ L2 用 JSON 而不是 Kryo/Protobuf：它不在热路径上（命中 L1 就走�
 审批通过才真正消耗，驳回则释放。`(request_id, action)` 唯一约束让**幂等由数据库保证**，
 重放同一条消息不会扣两次。
 
-**中台集成的现状**：`RemoteWorkflowGateway` 的办理路径目前会抛明确异常，
-因为中台现有 SDK 只有审方专用的 `completeReview`，通用审批需要中台补一个 `completeTask` 端点。
-在那之前用 `oa.flow.workflow.mode=LOCAL` 走本地测试替身跑通端到端 ——
-替身只按 `approverChain` 顺序流转，语义与目标 BPMN 一致，默认不装配。
+**中台集成的现状**：`RemoteWorkflowGateway` 已使用通用 `completeTask` SDK，
+`phase4b-remote-smoke.sh` 覆盖真中台发起与办理；生产默认 `REMOTE`。
+`oa.flow.workflow.mode=LOCAL` 只用于不启动外部中台的本地测试，它按 `approverChain`
+顺序流转，进程/任务 ID 带运行实例前缀，且在审批实例绑定后才投影首个待办，避免重启碰撞和空业务字段。
 
 ---
 
@@ -217,11 +217,29 @@ POST /attendance/punch
 
 ---
 
-## 7. 明确没做的
+## 7. 前端、认证与实时通知
 
-- **前端**（Phase 3/6）：PC 管控台与移动端 H5 都还没开工，动手前要先走 `/frontend-plan`。
+PC `oa-console` 与移动端 `oa-mobile` 是两个独立 Vite 应用，共用 REST 语义但不复制后端判权。
+PC 覆盖组织、IAM、权限沙盘、知识库和报表；移动端覆盖待办办理、打卡、通讯录与公告已读。
+两者均消费 `/api/v1/me/permissions`，菜单和按钮裁剪只改善体验，后端注解仍是安全边界。
+
+生产安全模式默认 `JWT`：四个服务统一校验 Casdoor 的签名、issuer 与 audience，JWT 模式硬拒绝
+`X-OA-User`。浏览器 WebSocket 无法设置 Authorization header，因此先通过 Bearer REST
+申请 256-bit、30 秒有效的一次性 ticket；握手时以 query 传递，Redis 原子取用即删，绑定用户/租户，
+并校验 Origin。Nginx 对 `/ws` 关闭 access log，长期 token 从不进入 URL。
+
+公告列表先完整释放主查询连接，再一次批量读取本页已读状态；禁止在 JDBC 行回调中发起嵌套查询，
+否则连接池满载时每个请求都会“占着一个连接再等一个连接”，形成自锁。
+
+OpenAPI 快照生成 `oa-console/src/shared/types/openapi.d.ts` 并参与类型检查；PC 和移动端分别受
+300KB / 220KB 首屏 gzip 门禁约束。容器 Nginx 使用 Docker DNS 动态解析四个后端，避免滚动重建后
+继续缓存旧容器 IP。
+
+## 8. 明确没做的
+
 - `USER_GROUP` 授权主体：表里预留，解析器遇到会**告警并跳过**（需要动态人群表）。
 - ABAC 条件引擎：建表完成，`oa.iam.abac.enabled=false`。
 - JIT 提权接审批流：`approval_instance_id` 字段已留，尚未接 BPMN。
-- 排班、加班调休、额度年初批量发放；`oa-job-service` 尚未接管日结与分区滚动。
-- 公文流转、知识库、行政、报表：仅有模块骨架。
+- 排班、加班调休仍未实现；额度年初批量发放、考勤日结与分区滚动已有跑批端点，但生产调度策略需部署方配置。
+- 知识库当前使用本地对象授权实现；`oa.authz.spicedb.enabled=true` 的 SpiceDB 适配器仍是显式 fail-fast 骨架。
+- 真实邮件、短信、企微、飞书供应商通道未接入；当前通知域完成站内信、公告、WebSocket 与回执。

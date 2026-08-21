@@ -1,6 +1,7 @@
 server:
   port: ${OA_NOTIFY_PORT:8401}
   shutdown: graceful
+  max-http-request-header-size: 64KB
 
 spring:
   application:
@@ -36,13 +37,17 @@ management:
 
 oa:
   security:
-    mode: ${OA_SECURITY_MODE:DEV}
+    mode: ${OA_SECURITY_MODE:JWT}
+    jwk-set-uri: ${OA_JWT_JWKS:http://localhost:8000/.well-known/jwks}
+    issuer: ${OA_JWT_ISSUER:http://localhost:8000}
+    audience: ${OA_JWT_AUDIENCE:}
   notify:
     ws:
       # 单机长连上限。按【连接数】扩容是这个服务独立部署的全部理由，
       # 所以这个数字必须是可观测、可配置的，而不是隐式的"能连多少算多少"。
       max-sessions: ${OA_NOTIFY_WS_MAX:20000}
       heartbeat-ms: 30000
+      ticket-ttl-seconds: ${OA_NOTIFY_WS_TICKET_TTL:30}
     broadcast:
       # 全员公告的落库批量。验收线：10,000 人推送完成 < 30s。
       batch-size: ${OA_NOTIFY_BATCH:1000}

@@ -1,6 +1,7 @@
 server:
   port: ${OA_JOB_PORT:8403}
   shutdown: graceful
+  max-http-request-header-size: 64KB
 
 spring:
   application:
@@ -34,4 +35,7 @@ management:
 
 oa:
   security:
-    mode: DEV               # Phase 2 接入 Casdoor 后改 JWT
+    mode: ${OA_SECURITY_MODE:JWT}
+    jwk-set-uri: ${OA_JWT_JWKS:http://localhost:8000/.well-known/jwks}
+    issuer: ${OA_JWT_ISSUER:http://localhost:8000}
+    audience: ${OA_JWT_AUDIENCE:}

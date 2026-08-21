@@ -320,7 +320,7 @@ function BenchButton({ userId, permCode }: { userId: string; permCode: string })
   return (
     <Space>
       {result && <Tag color="success">{result}</Tag>}
-      <Button icon={<ThunderboltOutlined />} disabled={!userId} loading={q.isFetching}
+      <Button icon={<ThunderboltOutlined />} disabled={!userId} loading={q.isFetching} data-testid="primary-action"
         onClick={() => void q.refetch()}>
         实测判权耗时
       </Button>

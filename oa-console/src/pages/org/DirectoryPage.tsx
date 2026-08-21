@@ -60,6 +60,7 @@ export default function DirectoryPage() {
           </Space>
         }
         extra={<Input.Search allowClear placeholder="姓名 / 工号 / 部门" style={{ width: 280 }}
+          data-testid="primary-action"
           value={keyword} onChange={(e) => setKeyword(e.target.value)} />}
       />
       <ScopeBanner module="org" />

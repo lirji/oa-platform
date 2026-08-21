@@ -25,8 +25,30 @@ export const config = {
 
   casdoorAuthority: trimSlash(import.meta.env.VITE_CASDOOR_AUTHORITY ?? 'http://localhost:8000'),
   casdoorClientId: import.meta.env.VITE_CASDOOR_CLIENT_ID ?? '',
-  oidcScope: import.meta.env.VITE_OIDC_SCOPE ?? 'openid profile email',
+  oidcScope: import.meta.env.VITE_OIDC_SCOPE ?? 'openid profile email offline_access',
 
   /** 长连地址。dev 走 vite proxy 的 /ws，prod 走 nginx。 */
   wsPath: import.meta.env.VITE_WS_PATH ?? '/ws',
 } as const
+
+/** e2e / 调试用的 DEV 身份覆写键。 */
+export const DEV_USER_KEY = 'oa.devUser'
+
+/**
+ * 运行期覆盖 DEV 身份（`localStorage['oa.devUser']`）。
+ *
+ * <p>e2e 要以五个不同账号跑同一套页面，而 `VITE_DEV_USER` 是**启动时**固定的 ——
+ * 没有这个覆写就得为每个账号起一个 dev server。
+ *
+ * <p>★ **JWT 模式下必须完全失效**：那时身份在 token 里，一个能改身份的
+ * localStorage 键就是一道越权后门。这里直接短路，不是"后端会拦住"就算了 ——
+ * 前端不该提供这样一个开关。
+ */
+export function devUserOverride(): string | null {
+  if (config.authEnabled) return null
+  try {
+    return localStorage.getItem(DEV_USER_KEY)
+  } catch {
+    return null // 隐私模式下 localStorage 可能直接抛
+  }
+}

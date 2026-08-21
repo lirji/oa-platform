@@ -85,7 +85,7 @@ export default function AuditPage() {
             ]} />
           </Form.Item>
           <Space>
-            <Button type="primary" htmlType="submit">筛选</Button>
+            <Button type="primary" htmlType="submit" data-testid="primary-action">筛选</Button>
             <Button onClick={() => setFilters({})}>重置</Button>
           </Space>
         </Form>

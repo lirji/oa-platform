@@ -11,7 +11,8 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 /**
  * {@code /ws} 长连处理器。
  *
- * <p>身份来源与 REST 一致：DEV 模式取 {@code ?userId=}，JWT 模式取握手时解析出的 principal。
+ * <p>身份来源与 REST 一致：DEV 模式取 {@code ?userId=}，JWT 模式消费由 Bearer REST 换得的
+ * 短期一次性 ticket。
  * <b>DEV 的 query 参数在 JWT 模式下必须被忽略</b> —— 否则任何人都能带上别人的 userId
  * 连上来收别人的消息，是一个只在长连上出现、REST 侧的鉴权链完全看不到的越权。
  */

@@ -12,6 +12,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -109,6 +111,35 @@ public class ReadReceiptStore {
             synchronized (buffered) { bm.or(buffered); }
         }
         return bm;
+    }
+
+    /**
+     * 批量判断一个人对多条公告的已读状态。公告列表不能在遍历外层 JDBC ResultSet 时
+     * 再逐条调用 {@link #readBitmap(long)}：那会让每个请求同时索要两条连接，连接池满时自锁。
+     */
+    public Map<Long, Boolean> hasRead(List<Long> announcementIds, int recipientSeq) {
+        Map<Long, Boolean> result = new LinkedHashMap<>();
+        for (Long id : announcementIds) result.put(id, false);
+        if (announcementIds.isEmpty()) return result;
+
+        String placeholders = String.join(",", announcementIds.stream().map(id -> "?").toList());
+        jdbc.query("SELECT announcement_id, bitmap FROM oa_notify.announcement_read"
+                        + " WHERE announcement_id IN (" + placeholders + ")",
+                announcementIds.toArray(), rs -> {
+                    result.put(rs.getLong("announcement_id"),
+                            deserialize(rs.getBytes("bitmap")).contains(recipientSeq));
+                });
+
+        // 刚点的已读可能仍在 2 秒内存缓冲中，列表也必须立即反映。
+        for (Long id : announcementIds) {
+            RoaringBitmap buffered = pending.get(id);
+            if (buffered != null) {
+                synchronized (buffered) {
+                    if (buffered.contains(recipientSeq)) result.put(id, true);
+                }
+            }
+        }
+        return result;
     }
 
     public void saveAudience(long annId, RoaringBitmap audience) {

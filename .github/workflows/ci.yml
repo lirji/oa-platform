@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend / JDK 21
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: lirji/workflow-platform
+          path: .ci-deps/workflow-platform
+      - uses: actions/checkout@v4
+        with:
+          repository: lirji/auth-platform
+          path: .ci-deps/auth-platform
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install workflow SDK
+        run: mvn -B -q -f .ci-deps/workflow-platform/pom.xml -pl workflow-platform-sdk -am install -DskipTests
+      - name: Install auth SDK
+        run: mvn -B -q -f .ci-deps/auth-platform/pom.xml -pl auth-platform-sdk -am install -DskipTests
+      - name: Test backend reactor
+        run: mvn -B test
+
+  console:
+    name: PC Console / Node 20
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: oa-console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: oa-console/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check generated contracts
+        run: pnpm gen:perm --check && pnpm gen:api:check
+      - name: Unit tests
+        run: pnpm test
+      - name: Typecheck and production build
+        run: pnpm build
+      - name: Initial bundle budget
+        run: pnpm size
+
+  mobile:
+    name: Mobile H5 / Node 20
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: oa-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: oa-mobile/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Unit tests
+        run: pnpm test
+      - name: Typecheck and production build
+        run: pnpm build
+      - name: Mobile bundle budget
+        run: pnpm size

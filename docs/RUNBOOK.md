@@ -14,6 +14,7 @@ docker compose -p oa-platform -f deploy/docker-compose.yml down --remove-orphans
 docker compose -p oa-platform -f deploy/docker-compose.yml up -d
 
 # 容器化全栈
+bash deploy/scripts/provision-oa-casdoor.sh  # localhost：幂等注册 OA SPA
 bash deploy/build-images.sh
 docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps up -d
 
@@ -21,6 +22,12 @@ docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps up -d
 docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps down
 pkill -f 'oa-app-.*\.jar'
 ```
+
+默认 profile 是生产等价的 `JWT`：PC 在 `:8404`，移动端在 `:8405`。只跑传统本地冒烟时，
+必须在命令上显式写 `OA_SECURITY_MODE=DEV`；不要把 DEV 写回默认配置。
+
+`build-images.sh` 默认从当前源码构建四个后端、PC、移动端共六个镜像。只验证某一前端时可用
+`OA_BUILD_CONSOLE=false` 或 `OA_BUILD_MOBILE=false` 跳过另一端，不能复用来源不明的旧后端 tag。
 
 > ⚠️ 9092 属 langchain4j-platform、29092/25432 属 workflow-platform、15432 属 auth-platform，
 > **别动别人的容器**。
@@ -39,6 +46,8 @@ pkill -f 'oa-app-.*\.jar'
 | 判权延迟 | `GET /api/v1/iam/admin/bench?userId=…` | `p99Us < 1000` |
 | 发件箱 | `GET /api/v1/flow/admin/status` | `dead: 0`，`pending` 不持续增长 |
 | 打卡链路 | `GET /api/v1/attendance/admin/stats` | `deadLettered: 0`，`duplicates: 0` |
+| PC / Mobile | `curl -I :8404/healthz` / `curl -I :8405/healthz` | HTTP 204 |
+| JWT 隔离 | 无 token 或只带 `X-OA-User` 调受保护接口 | HTTP 401 |
 
 ---
 
@@ -75,6 +84,26 @@ pkill -f 'oa-app-.*\.jar'
 
 `GET /api/v1/flow/admin/status`：`pending` 持续增长且 `failed` 上升 → Kafka 不可达。
 `dead > 0` → 某条消息重试 10 次仍失败，查 `oa_flow.oa_outbox.last_error`。
+
+### 「JWT 登录后仍 401 / WebSocket 连不上」
+
+- 解码 token 检查 `iss`、`aud`、`sub`，它们必须分别匹配 `OA_JWT_ISSUER`、
+  `OA_JWT_AUDIENCE` 与主体 UUID；只验签名不验 audience 不可接受。
+- 先调用 `POST /api/v1/notify/ws-ticket`。WebSocket 只能使用一次性 ticket，重放、过期、错误 Origin
+  都应握手失败；不要退化成 `/ws?token=<access_token>`。
+- Casdoor token 可能超过 8KB；四服务已提高合法请求头上限。若前置网关仍返回 400，也要同步调整网关限制。
+- 本地首次联调运行 `deploy/scripts/provision-oa-casdoor.sh`，确认回调包含 `:5473/:8404/:5474/:8405`。
+
+### 「公告列表并发时连接池耗尽」
+
+公告与已读状态必须是“两段查询”：先完成列表查询并释放连接，再按本页 ID 批量查回执。
+不要在 `JdbcTemplate` 的行回调里逐行调用 `hasRead`；并发达到连接池大小时会形成所有请求
+各占一个连接、同时等待第二个连接的自锁。可用全链路压测的“公告列表”场景回归。
+
+### 「前端代理在后端重建后突然 502」
+
+PC/移动 Nginx 必须通过 Docker DNS 动态解析上游，不能在启动时永久缓存容器 IP。
+如果镜像已更新但旧容器仍持有配置，强制重建对应前端容器，再检查四个 `/api/v1` 代理。
 
 ---
 
@@ -141,6 +170,31 @@ pkill -f 'oa-app-.*\.jar'
 23. **冒烟脚本要清 Redis，不只是清表**：上一轮的幂等键会让这一轮全部被判成"已处理"。
 24. **重装数据后授权会"复活"**：`TRUNCATE ... RESTART IDENTITY` 让 user id 完全重现，
     旧授权被同名新用户继承。
+25. **JDBC 行回调里不能做同池嵌套查询**：公告列表曾在每一行查询已读状态；并发等于池大小时
+    所有线程各占一个连接再等第二个，最终全池自锁。先物化结果、释放连接，再批量查关联状态。
+26. **并发上限要原子预留**：WebSocket 会话数用 `get` 后 `increment` 会在并发握手下越过上限；
+    必须用 CAS 先占名额，注册失败再归还。
+27. **E2E 不能只等 Toast**：CORS/500 的错误 Toast 也可能让“出现提示”断言通过；写操作必须同时
+    等待成功 HTTP response 并核对后端状态。
+28. **压测参数名本身属于契约**：组织树使用 `maxDepth` 而不是 `depth`。写错会静默返回整棵万人树，
+    把 16KB 响应测成约 610KB，性能结论随即失真。
+
+---
+
+## 发布前质量关卡
+
+```bash
+mvn -B test
+bash deploy/scripts/phase3-console-smoke.sh
+bash deploy/scripts/phase4-jwt-ws-smoke.sh
+bash deploy/scripts/phase5-mobile-smoke.sh
+OA_NOTIFY_BASE=http://127.0.0.1:8401 OA_ADMIN=seed-user-1 \
+  java deploy/scripts/FullChainLoadTest.java http://127.0.0.1:18400 1000 20
+```
+
+Phase 3 覆盖 PC 契约、105 条单测、47 条浏览器 E2E、镜像与代理；Phase 4 覆盖真实 Casdoor、
+四服务 JWT 与一次性 WS ticket；Phase 5 覆盖移动四主流程、390/320px、镜像与代理。
+全链路压测必须 0 失败且每个场景 P99 低于程序内预算。详细基线见交付 QA 报告。
 
 ---
 
@@ -148,10 +202,11 @@ pkill -f 'oa-app-.*\.jar'
 
 - [ ] `OA_CRYPTO_DATA_KEY` 注入真实密钥（`openssl rand -base64 32`），
       否则敏感字段用的是仓库里写死的开发默认密钥
-- [ ] `oa.security.mode` 改 `JWT` 并配 Casdoor `issuer-uri`
+- [ ] 为生产域名配置 Casdoor `issuer` / `audience` / SPA 回调（代码与 compose 已默认 JWT）
 - [ ] `OA_IAM_ENFORCE=true`（默认已是）
 - [ ] `OA_ORG_SEED_ENABLED=false`（万人级装载接口必须关）
 - [ ] `OA_BOOTSTRAP_ADMIN` 初始化完成后清空
 - [ ] 影子校验跑满 2 周且 `oa_perm_mismatch_total` 恒为 0 后再考虑关闭
-- [ ] `oa-job-service` 接管考勤日结与 `punch_record` 分区滚动
-- [ ] 越权 / IDOR 渗透用例（Phase 8）
+- [ ] 配置生产调度触发 `oa-job-service` 的考勤日结与 `punch_record` 分区滚动
+- [x] 越权 / IDOR 渗透用例（Phase 8）
+- [ ] 在目标生产容量与真实网关/TLS 下复跑 JWT、WS 和全链路压测

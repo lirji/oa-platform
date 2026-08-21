@@ -13,9 +13,11 @@
 | Phase 6 | 通知（长连 / 万人公告 / 位图回执）— 后端 | ✅ 冒烟 28/28 |
 | Phase 7 | 文档与行政（公文号段 / 知识库 / 会议室排他约束） | ✅ 冒烟 45/45 |
 | Phase 8 | 报表 / 审计 / 跑批 / 文件 / ★渗透用例 | ✅ 冒烟 40/40 |
-| Phase 3 · 6 | PC 前端 `oa-console` · 移动端 `oa-mobile` | ⬜ 待做（动手前先走 `/frontend-plan`） |
+| Phase 3 · 6 | PC 前端 `oa-console` · 移动端 `oa-mobile` | ✅ 发布关卡 14/14 · 13/13 |
+| 交付收口 | OpenAPI 契约 / CI / JWT+WS / 全链路压测 | ✅ 全部通过 |
 
-**后端已全部完成，冒烟共 231 条断言全绿。** 剩余只有前端与依赖前端的交付项。
+**后端 231 条阶段冒烟断言全绿，PC、移动端、JWT/WebSocket 和发布门禁均已完成。**
+最终验收证据见 [`docs/delivery/oa-platform-completion/`](docs/delivery/oa-platform-completion/)。
 
 ### 几个拿得出手的数字
 
@@ -28,7 +30,7 @@
 | 会议室并发预定（100 请求抢同一时段） | **恰好 1 成功**（PG 排他约束） | 只成功 1 条 |
 | 万人组织装载（1,000 组织 + 10,000 员工） | **~0.7 s** | 30 s |
 | 考勤日结（10,000 人） | **165 ms** | 10 min |
-| 工作台首屏 API P99（并发 20） | **55.7 ms** | 200 ms |
+| 工作台首屏 API P99（最终 1000 请求 / 并发 20） | **63.3 ms** | 200 ms |
 
 ---
 
@@ -81,16 +83,35 @@ cp deploy/.env.example deploy/.env
 docker compose -p oa-platform -f deploy/docker-compose.yml down --remove-orphans
 docker compose -p oa-platform -f deploy/docker-compose.yml up -d
 mvn clean install -DskipTests
-OA_ORG_SEED_ENABLED=true OA_BOOTSTRAP_ADMIN=<你的 Casdoor sub> \
+OA_SECURITY_MODE=DEV OA_ORG_SEED_ENABLED=true OA_BOOTSTRAP_ADMIN=<你的 Casdoor sub> \
   java -jar oa-app/target/oa-app-0.1.0-SNAPSHOT.jar
 ```
 
 ### 起容器化全栈
 
 ```bash
-bash deploy/build-images.sh          # 先在宿主机构建 jar，再 docker build（原因见 Dockerfile 顶部）
+bash deploy/scripts/provision-oa-casdoor.sh  # 幂等创建 localhost OA SPA 应用
+bash deploy/build-images.sh                 # 默认构建 JWT 后端 + PC + 移动端
 docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps up -d
 curl -s localhost:8400/api/v1/system/ping
+```
+
+入口：PC `http://localhost:8404`，移动端 `http://localhost:8405`。生产默认 `JWT`；
+`DEV` 只供本地冒烟显式使用，JWT 模式会拒绝 `X-OA-User` 身份覆盖。
+
+### 前端本地开发与契约
+
+```bash
+cd oa-console
+pnpm install --frozen-lockfile
+pnpm gen:api:check                 # 固定 OpenAPI 快照 → TS 类型漂移门禁
+pnpm test && pnpm build && pnpm size
+pnpm dev                           # :5473
+
+cd ../oa-mobile
+pnpm install --frozen-lockfile
+pnpm test && pnpm build && pnpm size
+pnpm dev                           # :5474
 ```
 
 ### 冒烟脚本（每个阶段一个，全部可复现）
@@ -105,10 +126,14 @@ bash deploy/scripts/phase5-attendance-smoke.sh   # 考勤 + 早高峰压测     
 bash deploy/scripts/phase6-notify-smoke.sh       # 通知 + 万人公告 + 位图回执 28 断言
 bash deploy/scripts/phase7-doc-admin-smoke.sh    # 公文/知识库/会议室排他约束 45 断言
 bash deploy/scripts/phase8-report-audit-smoke.sh # 报表/审计/跑批/文件/渗透   40 断言
+bash deploy/scripts/phase3-console-smoke.sh      # PC 契约/单测/E2E/镜像/代理 14 断言
+bash deploy/scripts/phase4-jwt-ws-smoke.sh       # Casdoor/JWT/WS ticket       13 断言
+bash deploy/scripts/phase5-mobile-smoke.sh       # 移动四主流程/镜像/代理       13 断言
 
 # 压测（单文件 Java 程序，无需构建、无需装 k6）
 java deploy/scripts/PunchLoadTest.java      http://localhost:8400 10000 300   # 早高峰打卡
-java deploy/scripts/FullChainLoadTest.java  http://localhost:8400 500 20      # 全链路读路径
+OA_NOTIFY_BASE=http://localhost:8401 OA_ADMIN=seed-user-1 \
+  java deploy/scripts/FullChainLoadTest.java http://localhost:8400 1000 20     # 全链路读路径
 ```
 
 `phase4` 与 `phase4b` 是**两件事**：前者用本地流程替身验 OA 自己的逻辑（不依赖外部进程），
@@ -155,11 +180,13 @@ oa-org             组织域 + OrgTreeCache（COW 内存树）+ OrgQueryApi
 oa-iam             权限域 + PermissionEngine 三级缓存（PermissionChecker 的实现方）
 oa-flow            表单引擎 + 审批 + 事务发件箱 + 待办读模型 + 请假
 oa-attendance      排班 / 打卡削峰 / 日结
-oa-doc oa-admin-biz oa-report    文档 / 行政 / 报表（骨架）
+oa-doc oa-admin-biz oa-report    公文/知识库、行政、报表/审计
 oa-app             ★ 主应用 :8400，装配以上全部
 oa-notify-service  ★ 按【连接数】扩容，故独立
 oa-file-service    ★ 大流量 IO，故独立
 oa-job-service     ★ 跑批与在线争 CPU，故独立
+oa-console         PC 控制台 :5473 / :8404（权限驱动菜单、组织/IAM/知识库/报表）
+oa-mobile          员工 H5 :5474 / :8405（待办、打卡、通讯录、公告）
 ```
 
 ---

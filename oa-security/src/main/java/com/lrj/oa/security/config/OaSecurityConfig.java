@@ -2,6 +2,7 @@ package com.lrj.oa.security.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,6 +11,17 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+
+import java.util.List;
 
 /**
  * OA 统一安全链路。四个可部署单元（app / notify / file / job）共用同一份，避免各写一套。
@@ -28,6 +40,38 @@ import org.springframework.security.web.SecurityFilterChain;
 public class OaSecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(OaSecurityConfig.class);
+
+    /**
+     * 本地 JWKS 验签 + exp/nbf + issuer + audience。JWKS URI 与 issuer 分离是刻意的：
+     * Docker 内可从 host.docker.internal 取 key，但 token 的 iss 仍必须是浏览器看到的公开地址。
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "oa.security", name = "mode", havingValue = "JWT", matchIfMissing = true)
+    public JwtDecoder oaJwtDecoder(OaSecurityProperties props) {
+        requireJwtSetting("oa.security.jwk-set-uri", props.getJwkSetUri());
+        requireJwtSetting("oa.security.issuer", props.getIssuer());
+        requireJwtSetting("oa.security.audience", props.getAudience());
+
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(props.getJwkSetUri()).build();
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(List.of(
+                new JwtTimestampValidator(),
+                new JwtIssuerValidator(props.getIssuer()),
+                audienceValidator(props.getAudience()))));
+        return decoder;
+    }
+
+    static OAuth2TokenValidator<Jwt> audienceValidator(String expected) {
+        return jwt -> jwt.getAudience().contains(expected)
+                ? OAuth2TokenValidatorResult.success()
+                : OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "audience 不包含期望值", null));
+    }
+
+    private static void requireJwtSetting(String name, String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("JWT 模式必须配置 " + name);
+        }
+    }
 
     @Bean
     public SecurityFilterChain oaSecurityFilterChain(HttpSecurity http, OaSecurityProperties props) throws Exception {

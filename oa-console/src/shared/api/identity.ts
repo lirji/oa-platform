@@ -1,5 +1,5 @@
 import type { InternalAxiosRequestConfig } from 'axios'
-import { config } from '../config'
+import { config, devUserOverride } from '../config'
 import { userManager } from '../../auth/oidcConfig'
 
 /**
@@ -78,7 +78,8 @@ export function jwtIdentity(deps: {
  * oidc-client-ts 已经在 `manualChunks` 里单独分块，DEV 模式下它只是被下载、不会被执行。
  */
 export function currentIdentity(): IdentityAdapter {
-  if (!config.authEnabled) return devIdentity(() => config.devUser)
+  // 运行期覆写优先（e2e 切身份用），JWT 模式下 devUserOverride() 恒为 null
+  if (!config.authEnabled) return devIdentity(() => devUserOverride() ?? config.devUser)
   return jwtIdentity({
     getToken: async () => {
       const u = await userManager.getUser()

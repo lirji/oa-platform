@@ -5,6 +5,7 @@ import com.lrj.oa.notify.api.dto.NotifyDtos;
 import com.lrj.oa.notify.application.NotifyService;
 import com.lrj.oa.notify.infrastructure.channel.ChannelDispatcher;
 import com.lrj.oa.notify.infrastructure.ws.SessionRegistry;
+import com.lrj.oa.notify.infrastructure.ws.WsTicketService;
 import com.lrj.oa.security.annotation.PublicApi;
 import com.lrj.oa.security.annotation.RequiresPerm;
 import com.lrj.oa.security.context.UserContext;
@@ -22,11 +23,14 @@ public class NotifyController {
     private final NotifyService notifyService;
     private final SessionRegistry sessions;
     private final ChannelDispatcher channels;
+    private final WsTicketService wsTickets;
 
-    public NotifyController(NotifyService notifyService, SessionRegistry sessions, ChannelDispatcher channels) {
+    public NotifyController(NotifyService notifyService, SessionRegistry sessions, ChannelDispatcher channels,
+                            WsTicketService wsTickets) {
         this.notifyService = notifyService;
         this.sessions = sessions;
         this.channels = channels;
+        this.wsTickets = wsTickets;
     }
 
     @GetMapping("/messages")
@@ -70,6 +74,18 @@ public class NotifyController {
     @RequiresPerm("oa:notify:send")
     public Result<Map<String, Object>> wsStats() {
         return Result.ok(Map.of("ws", sessions.stats(), "channels", channels.enabledChannels()));
+    }
+
+    /**
+     * 浏览器原生 WebSocket 不能设置 Authorization header，因此先用 Bearer REST 请求换
+     * 一枚短期、一次性 ticket。ticket 只承载随机熵，长期 access token 永不进入 URL。
+     */
+    @PostMapping("/ws-ticket")
+    @RequiresPerm("oa:notify:read")
+    public Result<Map<String, Object>> wsTicket() {
+        UserContext ctx = UserContextHolder.require();
+        WsTicketService.IssuedTicket issued = wsTickets.issue(ctx.userId(), ctx.tenantId());
+        return Result.ok(Map.of("ticket", issued.ticket(), "expiresInSeconds", issued.expiresInSeconds()));
     }
 
     @GetMapping("/ping")

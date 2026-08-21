@@ -5,13 +5,14 @@ import com.lrj.oa.org.api.OrgQueryApi;
 import com.lrj.oa.org.api.dto.EmployeeView;
 import com.lrj.oa.security.context.UserContext;
 import com.lrj.oa.security.context.UserContextHolder;
+import com.lrj.oa.security.config.OaSecurityProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.Ordered;
+import org.springframework.boot.autoconfigure.security.SecurityProperties;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -34,7 +35,9 @@ import java.io.IOException;
  * <p>无论哪条路径，{@code finally} 里都必须清理 —— 线程复用会串号。
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 20)
+// 必须在 Spring Security(-100) 之后，JWT principal 此时才已写入 SecurityContext；
+// 放在它之前会导致合法 Bearer token 也永远装配不出 UserContext。
+@Order(SecurityProperties.DEFAULT_FILTER_ORDER + 1)
 public class UserContextFilter extends OncePerRequestFilter {
 
     public static final String DEV_USER_HEADER = "X-OA-User";
@@ -42,8 +45,12 @@ public class UserContextFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(UserContextFilter.class);
 
     private final OrgQueryApi orgQuery;
+    private final OaSecurityProperties security;
 
-    public UserContextFilter(OrgQueryApi orgQuery) { this.orgQuery = orgQuery; }
+    public UserContextFilter(OrgQueryApi orgQuery, OaSecurityProperties security) {
+        this.orgQuery = orgQuery;
+        this.security = security;
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -66,8 +73,13 @@ public class UserContextFilter extends OncePerRequestFilter {
         if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
             return jwt.getSubject();          // Casdoor sub（UUID），全系统主体标识
         }
-        String dev = request.getHeader(DEV_USER_HEADER);
-        return (dev == null || dev.isBlank()) ? null : dev.trim();
+        if (security.getMode() == OaSecurityProperties.Mode.DEV) {
+            String dev = request.getHeader(DEV_USER_HEADER);
+            return (dev == null || dev.isBlank()) ? null : dev.trim();
+        }
+        // JWT 模式 fail-closed：即使 SecurityFilterChain 后续会拒绝无 token 请求，
+        // 这里也绝不让 X-OA-User 短暂进入线程上下文（尤其是 /ws、health 等公开路径）。
+        return null;
     }
 
     /**

@@ -44,13 +44,20 @@ public class SessionRegistry {
     record Entry(WebSocketSession session, ReentrantLock lock) {}
 
     public boolean register(String userId, WebSocketSession session) {
-        if (total.get() >= maxSessions) {
-            log.warn("长连数已达上限 {}，拒绝新连接 user={}", maxSessions, userId);
-            return false;
-        }
-        byUser.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet())
+        // 原子预占名额。get() 判断后再 increment 会让并发握手一起越过上限。
+        long current;
+        do {
+            current = total.get();
+            if (current >= maxSessions) {
+                log.warn("长连数已达上限 {}，拒绝新连接 user={}", maxSessions, userId);
+                return false;
+            }
+        } while (!total.compareAndSet(current, current + 1));
+
+        boolean added = byUser.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet())
                 .add(new Entry(session, new ReentrantLock()));
-        total.incrementAndGet();
+        if (!added) total.decrementAndGet();
+        if (!added) log.debug("忽略重复 WebSocket 注册 user={} session={}", userId, session.getId());
         return true;
     }
 

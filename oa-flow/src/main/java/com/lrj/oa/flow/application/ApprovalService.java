@@ -150,6 +150,9 @@ public class ApprovalService {
                         @Override public void afterCommit() {
                             String pid = local.startProcess(req.processDefinitionKey(), req.businessKey(), req.approverChain());
                             instanceMapper.bindProcessInstance(instanceId, pid);
+                            // LOCAL 首任务创建时实例尚未回绑，bind 后再投影才能带齐业务元数据。
+                            local.findTasks(req.processDefinitionKey(), req.businessKey())
+                                    .forEach(ApprovalService.this::projectTodo);
                         }
                     });
         }

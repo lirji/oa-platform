@@ -1,6 +1,7 @@
 server:
   port: ${OA_APP_PORT:8400}
   shutdown: graceful
+  max-http-request-header-size: 64KB  # Casdoor access_token 可达 9KB，默认 8KB 会在鉴权前直接 400
 
 spring:
   application:
@@ -53,7 +54,10 @@ management:
 oa:
   version: 0.1.0-SNAPSHOT
   security:
-    mode: DEV              # Phase 2 接入 Casdoor 后改 JWT（改完 /api/** 无 token 一律 401）
+    mode: ${OA_SECURITY_MODE:JWT}
+    jwk-set-uri: ${OA_JWT_JWKS:http://localhost:8000/.well-known/jwks}
+    issuer: ${OA_JWT_ISSUER:http://localhost:8000}
+    audience: ${OA_JWT_AUDIENCE:}
   org:
     tree-cache:
       poll-ms: 5000          # 跨节点收敛上界；Phase 2 接入 Redis 失效总线后可调大

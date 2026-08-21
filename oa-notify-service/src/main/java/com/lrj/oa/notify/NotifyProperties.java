@@ -17,10 +17,13 @@ public class NotifyProperties {
     public static class Ws {
         private int maxSessions = 20000;
         private long heartbeatMs = 30000;
+        private long ticketTtlSeconds = 30;
         public int getMaxSessions() { return maxSessions; }
         public void setMaxSessions(int v) { this.maxSessions = v; }
         public long getHeartbeatMs() { return heartbeatMs; }
         public void setHeartbeatMs(long v) { this.heartbeatMs = v; }
+        public long getTicketTtlSeconds() { return ticketTtlSeconds; }
+        public void setTicketTtlSeconds(long v) { this.ticketTtlSeconds = v; }
     }
 
     public static class Broadcast {

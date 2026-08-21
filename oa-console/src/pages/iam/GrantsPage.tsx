@@ -118,7 +118,7 @@ export default function GrantsPage() {
                 <Select options={['ALL', 'ORG_AND_SUB', 'ORG', 'SELF', 'NONE'].map((v) => ({ value: v, label: v }))} />
               </Form.Item>
               <Space>
-                <Button type="primary" htmlType="submit" loading={grant.isPending}>查询 / 授权</Button>
+                <Button type="primary" htmlType="submit" loading={grant.isPending} data-testid="primary-action">查询 / 授权</Button>
               </Space>
             </Form>
           </Card>

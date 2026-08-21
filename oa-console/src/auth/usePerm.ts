@@ -30,6 +30,7 @@ export function usePermVersion(): number {
 }
 
 export function usePerm() {
+  const userId = usePermStore((s) => s.userId)
   const codes = usePermStore((s) => s.codes)
   const version = usePermStore((s) => s.version)
   const elevated = usePermStore((s) => s.elevated)
@@ -43,6 +44,8 @@ export function usePerm() {
   const menus = usePermStore((s) => s.menus)
 
   return useMemo(() => ({
+    /** 当前主体（Casdoor sub）。用于对象级权限解释等“查我自己”的交互。 */
+    userId,
     /** 权限版本。per-viewer 的 queryKey 请用更省的 `usePermVersion()`。 */
     version,
     /** 加载完了吗。★ 与"没权限"是两件事：加载中不该渲染 403。 */
@@ -69,5 +72,5 @@ export function usePerm() {
     elevationRemainingMs: elevations.length
       ? Math.max(0, Math.min(...elevations.map((e) => e.remainingMs)))
       : 0,
-  }), [codes, version, elevated, loaded, anonymous, menus, dataScope, scopePrefixes, moduleScope, delegators, elevations])
+  }), [userId, codes, version, elevated, loaded, anonymous, menus, dataScope, scopePrefixes, moduleScope, delegators, elevations])
 }

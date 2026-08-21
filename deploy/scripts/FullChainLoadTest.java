@@ -42,9 +42,9 @@ public class FullChainLoadTest {
                 new Scenario("工作台待办", base, "/api/v1/flow/todos", admin, 200),
                 new Scenario("我的权限清单", base, "/api/v1/me/permissions", admin, 200),
                 // 判权热路径：每个受保护接口都要过一次判权，这条最能反映引擎开销
-                new Scenario("通讯录分页", base, "/api/v1/org/directory?page=0&size=20", admin, 200),
+                new Scenario("通讯录分页", base, "/api/v1/org/directory?size=20", admin, 200),
                 // 组织树是内存快照（COW），不查库——它和通讯录一起能区分"判权开销"与"查库开销"
-                new Scenario("组织树", base, "/api/v1/org/units/tree?depth=3", admin, 200),
+                new Scenario("组织树", base, "/api/v1/org/units/tree?maxDepth=3", admin, 200),
                 new Scenario("驾驶舱概览", base, "/api/v1/report/overview", admin, 500),
                 new Scenario("公告列表", notify, "/api/v1/announcements?limit=20", admin, 200));
 

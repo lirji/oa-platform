@@ -13,6 +13,9 @@
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium",
     "gen:perm": "tsx scripts/gen-perm.ts",
+    "gen:api": "node scripts/gen-openapi.mjs",
+    "gen:api:fetch": "node scripts/gen-openapi.mjs --fetch",
+    "gen:api:check": "node scripts/gen-openapi.mjs --check",
     "size": "node scripts/check-size.mjs"
   },
   "dependencies": {
@@ -41,6 +44,7 @@
     "@vitejs/plugin-react": "^4.3.3",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^25.0.1",
+    "openapi-typescript": "7.13.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
