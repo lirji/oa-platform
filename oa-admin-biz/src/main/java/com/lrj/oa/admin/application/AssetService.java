@@ -4,16 +4,14 @@ import com.lrj.oa.admin.api.dto.AdminDtos;
 import com.lrj.oa.common.api.ResultCode;
 import com.lrj.oa.admin.infrastructure.mapper.AdminMappers;
 import com.lrj.oa.common.exception.BusinessException;
+import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.security.annotation.DataScope;
 import com.lrj.oa.security.context.UserContext;
 import com.lrj.oa.security.context.UserContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -26,12 +24,12 @@ import java.util.List;
 @Service
 public class AssetService {
 
-    private final JdbcTemplate jdbc;
     private final AdminMappers.AssetQueryMapper assetQuery;
+    private final AdminMappers.SupplyMapper supplies;
 
-    public AssetService(JdbcTemplate jdbc, AdminMappers.AssetQueryMapper assetQuery) {
-        this.jdbc = jdbc;
+    public AssetService(AdminMappers.AssetQueryMapper assetQuery, AdminMappers.SupplyMapper supplies) {
         this.assetQuery = assetQuery;
+        this.supplies = supplies;
     }
 
     /**
@@ -58,41 +56,34 @@ public class AssetService {
      * 量小（一件资产不会有几百人同时抢），行锁的代价可以忽略。
      */
     @Transactional
+    @DataScope(permission = "oa:asset:claim", table = "oa_admin.asset", module = "admin", alias = "a")
     public void claim(long assetId, String remark) {
         UserContext ctx = UserContextHolder.require();
-        String status = jdbc.query("SELECT status FROM oa_admin.asset WHERE id = ? FOR UPDATE",
-                rs -> rs.next() ? rs.getString(1) : null, assetId);
+        String status = assetQuery.statusForUpdate(assetId);
         if (status == null) throw BusinessException.of(ResultCode.NOT_FOUND, "资产不存在");
         if (!"IDLE".equals(status)) {
             throw BusinessException.of(ResultCode.CONFLICT, "资产当前状态为 " + status + "，不可领用");
         }
-        jdbc.update("UPDATE oa_admin.asset SET status = 'IN_USE', holder_id = ? WHERE id = ?",
-                ctx.userId(), assetId);
-        jdbc.update("""
-                INSERT INTO oa_admin.asset_txn(asset_id, action, actor_id, from_status, to_status, remark)
-                VALUES (?, 'CLAIM', ?, ?, 'IN_USE', ?)
-                """, assetId, ctx.userId(), status, remark);
+        if (assetQuery.claim(assetId, ctx.userId()) == 0) {
+            throw BusinessException.of(ResultCode.CONFLICT, "资产已被其他人领用");
+        }
+        assetQuery.insertTxn(assetId, "CLAIM", ctx.userId(), status, "IN_USE", remark);
     }
 
     @Transactional
+    @DataScope(permission = "oa:asset:claim", table = "oa_admin.asset", module = "admin", alias = "a")
     public void giveBack(long assetId) {
         UserContext ctx = UserContextHolder.require();
         // 只能还自己持有的：条件带 holder_id，别人还不了你的资产。
-        int n = jdbc.update("UPDATE oa_admin.asset SET status = 'IDLE', holder_id = NULL"
-                + " WHERE id = ? AND holder_id = ? AND status = 'IN_USE'", assetId, ctx.userId());
+        int n = assetQuery.giveBack(assetId, ctx.userId());
         if (n == 0) throw BusinessException.of(ResultCode.CONFLICT, "该资产不在你名下");
-        jdbc.update("""
-                INSERT INTO oa_admin.asset_txn(asset_id, action, actor_id, from_status, to_status)
-                VALUES (?, 'RETURN', ?, 'IN_USE', 'IDLE')
-                """, assetId, ctx.userId());
+        assetQuery.insertTxn(assetId, "RETURN", ctx.userId(), "IN_USE", "IDLE", null);
     }
 
     public List<AdminDtos.SupplyView> supplies() {
-        List<AdminDtos.SupplyView> out = new ArrayList<>();
-        jdbc.query("SELECT id, code, name, unit, stock FROM oa_admin.supply ORDER BY code",
-                (RowCallbackHandler) rs -> out.add(new AdminDtos.SupplyView(rs.getLong("id"), rs.getString("code"),
-                        rs.getString("name"), rs.getString("unit"), rs.getInt("stock"))));
-        return out;
+        return supplies.list(TenantContext.get()).stream()
+                .map(r -> new AdminDtos.SupplyView(r.id, r.code, r.name, r.unit, r.stock))
+                .toList();
     }
 
     /**
@@ -109,15 +100,11 @@ public class AssetService {
         if (qty <= 0) throw BusinessException.of(ResultCode.BAD_REQUEST, "数量必须为正");
         int n;
         try {
-            n = jdbc.update("UPDATE oa_admin.supply SET stock = stock - ? WHERE id = ? AND stock >= ?",
-                    qty, supplyId, qty);
+            n = supplies.take(TenantContext.get(), supplyId, qty);
         } catch (DataIntegrityViolationException e) {
             throw BusinessException.of(ResultCode.CONFLICT, "库存不足");
         }
         if (n == 0) throw BusinessException.of(ResultCode.CONFLICT, "库存不足或用品不存在");
-        jdbc.update("""
-                INSERT INTO oa_admin.supply_request(supply_id, requester_id, qty, org_id, org_path)
-                VALUES (?, ?, ?, ?, ?)
-                """, supplyId, ctx.userId(), qty, ctx.primaryOrgId(), ctx.primaryOrgPath());
+        supplies.insertRequest(supplyId, ctx.userId(), qty, ctx.primaryOrgId(), ctx.primaryOrgPath());
     }
 }

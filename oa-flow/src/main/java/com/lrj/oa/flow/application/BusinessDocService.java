@@ -3,14 +3,15 @@ package com.lrj.oa.flow.application;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lrj.oa.common.api.ResultCode;
+import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.common.id.SegmentIdGenerator;
+import com.lrj.oa.flow.infrastructure.mapper.BusinessDocMapper;
+import com.lrj.oa.security.annotation.ObjectScope;
 import com.lrj.oa.security.context.UserContext;
 import com.lrj.oa.security.context.UserContextHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,15 +43,15 @@ public class BusinessDocService {
     private static final Logger log = LoggerFactory.getLogger(BusinessDocService.class);
     private static final String PROCESS_KEY = "oaGenericApproval";
 
-    private final JdbcTemplate jdbc;
+    private final BusinessDocMapper mapper;
     private final ObjectMapper json = new ObjectMapper();
     private final ApprovalService approvalService;
     private final ApproverResolver approverResolver;
     private final SegmentIdGenerator ids;
 
-    public BusinessDocService(JdbcTemplate jdbc, ApprovalService approvalService,
+    public BusinessDocService(BusinessDocMapper mapper, ApprovalService approvalService,
                               ApproverResolver approverResolver, SegmentIdGenerator ids) {
-        this.jdbc = jdbc;
+        this.mapper = mapper;
         this.approvalService = approvalService;
         this.approverResolver = approverResolver;
         this.ids = ids;
@@ -66,8 +67,7 @@ public class BusinessDocService {
      */
     @jakarta.annotation.PostConstruct
     void registerFinishHandlers() {
-        List<String> types = jdbc.queryForList(
-                "SELECT biz_type FROM oa_flow.approval_level_rule", String.class);
+        List<String> types = mapper.configuredTypes();
         for (String t : types) {
             approvalService.registerFinishHandler(t, (businessKey, outcome) -> onFinished(businessKey, outcome));
         }
@@ -81,6 +81,8 @@ public class BusinessDocService {
                           String status, List<String> approverChain, OffsetDateTime createdAt) {}
 
     @Transactional
+    @ObjectScope(permission = "oa:doc-flow:submit", tables = "oa_flow.business_doc",
+            strategy = ObjectScope.Strategy.OWNER, reason = "新单据 applicant 固定为当前用户")
     public DocView submit(SubmitDoc cmd) {
         UserContext ctx = UserContextHolder.require();
         String bizType = cmd.bizType() == null ? "" : cmd.bizType().toUpperCase();
@@ -103,14 +105,8 @@ public class BusinessDocService {
         String title = ctx.username() + " 的" + templateName;
         String summary = summarize(bizType, form, amount, days);
 
-        Long id = jdbc.queryForObject("""
-                INSERT INTO oa_flow.business_doc
-                    (biz_type, doc_no, applicant_id, applicant_name, title, summary,
-                     form_data, amount, days, status, org_id, org_path)
-                VALUES (?,?,?,?,?,?,?::jsonb,?,?, 'PENDING', ?,?)
-                RETURNING id
-                """, Long.class, bizType, docNo, ctx.userId(), ctx.username(), title, summary,
-                writeJson(form), amount, days, ctx.primaryOrgId(), ctx.primaryOrgPath());
+        Long id = mapper.insert(TenantContext.get(), bizType, docNo, ctx.userId(), ctx.username(),
+                title, summary, writeJson(form), amount, days, ctx.primaryOrgId(), ctx.primaryOrgPath());
         if (id == null) throw BusinessException.of(ResultCode.INTERNAL_ERROR, "单据写入失败");
 
         approvalService.submit(new ApprovalService.SubmitRequest(
@@ -129,16 +125,13 @@ public class BusinessDocService {
      * 引进来的复杂度全是为将来可能不会发生的需求付的。真需要时再换，接口不变。
      */
     private String validateAgainstTemplate(String bizType, Map<String, Object> form) {
-        List<Map<String, Object>> rows = jdbc.queryForList("""
-                SELECT name, schema_json FROM oa_flow.form_template
-                 WHERE code = ? AND status = 'PUBLISHED' ORDER BY version DESC LIMIT 1
-                """, bizType);
-        if (rows.isEmpty()) {
+        BusinessDocMapper.TemplateRow template = mapper.latestTemplate(TenantContext.get(), bizType);
+        if (template == null) {
             throw BusinessException.of(ResultCode.FORM_TEMPLATE_INVALID,
                     "没有已发布的表单模板: " + bizType);
         }
-        String name = (String) rows.get(0).get("name");
-        JsonNode schema = readJson(String.valueOf(rows.get(0).get("schema_json")));
+        String name = template.name;
+        JsonNode schema = readJson(template.schemaJson);
 
         List<String> missing = new ArrayList<>();
         JsonNode required = schema.path("required");
@@ -169,14 +162,13 @@ public class BusinessDocService {
 
     /** 按规则表算审批级数。规则进表是为了"报销超过 5 万加一级"这种调整不必发版。 */
     int levelsFor(String bizType, BigDecimal amount, BigDecimal days) {
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT driver, thresholds FROM oa_flow.approval_level_rule WHERE biz_type = ?", bizType);
-        if (rows.isEmpty()) {
+        BusinessDocMapper.RuleRow rule = mapper.levelRule(bizType);
+        if (rule == null) {
             throw BusinessException.of(ResultCode.FLOW_START_FAILED,
                     "没有为 " + bizType + " 配置审批级数规则");
         }
-        String driver = (String) rows.get(0).get("driver");
-        JsonNode thresholds = readJson(String.valueOf(rows.get(0).get("thresholds")));
+        String driver = rule.driver;
+        JsonNode thresholds = readJson(rule.thresholds);
         BigDecimal metric = switch (driver) {
             case "AMOUNT" -> amount == null ? BigDecimal.ZERO : amount;
             case "DAYS" -> days == null ? BigDecimal.ZERO : days;
@@ -195,38 +187,21 @@ public class BusinessDocService {
                 bizType + " 的审批级数规则缺少兜底档（最后一条不应带 lte）");
     }
 
+    @ObjectScope(permission = "oa:doc-flow:submit", tables = "oa_flow.business_doc",
+            strategy = ObjectScope.Strategy.OWNER, reason = "列表 SQL 固定 applicant_id 为当前用户")
     public List<DocView> myDocs(String bizType, int limit) {
         UserContext ctx = UserContextHolder.require();
-        StringBuilder sql = new StringBuilder("""
-                SELECT id, biz_type, doc_no, title, summary, form_data, amount, days, status, created_at
-                  FROM oa_flow.business_doc WHERE applicant_id = ?
-                """);
-        List<Object> args = new ArrayList<>();
-        args.add(ctx.userId());
-        if (bizType != null && !bizType.isBlank()) {
-            sql.append(" AND biz_type = ?");
-            args.add(bizType.toUpperCase());
-        }
-        sql.append(" ORDER BY id DESC LIMIT ?");
-        args.add(Math.min(Math.max(limit, 1), 200));
-
-        List<DocView> out = new ArrayList<>();
-        jdbc.query(sql.toString(), (RowCallbackHandler) rs -> out.add(new DocView(
-                        rs.getLong("id"), rs.getString("biz_type"), rs.getString("doc_no"),
-                        rs.getString("title"), rs.getString("summary"),
-                        readMap(rs.getString("form_data")),
-                        rs.getBigDecimal("amount"), rs.getBigDecimal("days"),
-                        rs.getString("status"), null,
-                        rs.getObject("created_at", OffsetDateTime.class))),
-                args.toArray());
-        return out;
+        String type = bizType == null || bizType.isBlank() ? null : bizType.toUpperCase();
+        return mapper.selectOwn(TenantContext.get(), ctx.userId(), type,
+                        Math.min(Math.max(limit, 1), 200)).stream()
+                .map(r -> new DocView(r.id, r.bizType, r.docNo, r.title, r.summary,
+                        readMap(r.formData), r.amount, r.days, r.status, null, r.createdAt)).toList();
     }
 
     /** 审批结束回调。由 ApprovalService 按 bizType 派发。 */
     public void onFinished(String docNo, String outcome) {
         String status = "REJECTED".equalsIgnoreCase(outcome) ? "REJECTED" : "APPROVED";
-        jdbc.update("UPDATE oa_flow.business_doc SET status = ?, finished_at = now()"
-                + " WHERE doc_no = ? AND status = 'PENDING'", status, docNo);
+        mapper.finish(TenantContext.get(), docNo, status);
         log.info("单据 {} 结束：{}", docNo, status);
     }
 
@@ -241,16 +216,11 @@ public class BusinessDocService {
      * 直接进 Map 会被序列化成 {@code {"type":"jsonb","value":"<JSON 字符串>"}} ——
      * 前端拿到的是一个套了两层的字符串，要二次 parse 才能用，而这件事没有任何地方会提示它。
      */
+    @ObjectScope(permission = "oa:doc-flow:submit", tables = {"oa_flow.form_template", "oa_flow.approval_level_rule"},
+            strategy = ObjectScope.Strategy.RESOURCE, reason = "已发布表单与审批规则是同权限用户共享的只读配置")
     public List<DocType> supportedTypes() {
-        return jdbc.query("""
-                SELECT t.code, t.name, t.version, t.schema_json, r.driver, r.description AS rule
-                  FROM oa_flow.form_template t
-                  LEFT JOIN oa_flow.approval_level_rule r ON r.biz_type = t.code
-                 WHERE t.status = 'PUBLISHED' AND t.code <> 'LEAVE'
-                 ORDER BY t.code
-                """, (rs, i) -> new DocType(rs.getString("code"), rs.getString("name"),
-                        rs.getInt("version"), readJson(rs.getString("schema_json")),
-                        rs.getString("driver"), rs.getString("rule")));
+        return mapper.supportedTypes(TenantContext.get()).stream().map(r ->
+                new DocType(r.code, r.name, r.version, readJson(r.schemaJson), r.driver, r.rule)).toList();
     }
 
     // ───────────────────────────────── 工具

@@ -1,9 +1,11 @@
 package com.lrj.oa.flow.web;
 
 import com.lrj.oa.common.api.Result;
+import com.lrj.oa.flow.api.dto.MyApplicationView;
 import com.lrj.oa.flow.api.dto.TodoView;
 import com.lrj.oa.flow.application.ApprovalService;
 import com.lrj.oa.flow.application.TodoService;
+import com.lrj.oa.flow.application.WorkbenchService;
 import com.lrj.oa.flow.application.command.FlowCommands;
 import com.lrj.oa.security.annotation.RequiresPerm;
 import com.lrj.oa.security.context.UserContextHolder;
@@ -18,19 +20,13 @@ import java.util.Map;
 @RequestMapping("/api/v1/flow/todos")
 public class WorkbenchController {
 
-    /** 我发起的一张单据。请假与 11 类通用单据在这里对齐成同一形状。 */
-    public record MyApplication(String bizType, String docNo, String status, String title,
-                                String summary, java.math.BigDecimal amount,
-                                java.math.BigDecimal days, java.time.OffsetDateTime createdAt) {}
-
-    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
-
     private final TodoService todoService;
     private final ApprovalService approvalService;
+    private final WorkbenchService workbenchService;
 
     public WorkbenchController(TodoService todoService, ApprovalService approvalService,
-                               org.springframework.jdbc.core.JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+                               WorkbenchService workbenchService) {
+        this.workbenchService = workbenchService;
         this.todoService = todoService;
         this.approvalService = approvalService;
     }
@@ -69,37 +65,12 @@ public class WorkbenchController {
      */
     @GetMapping("/mine")
     @RequiresPerm("oa:flow:todo:view")
-    public Result<List<MyApplication>> myApplications(
+    public Result<List<MyApplicationView>> myApplications(
             @RequestParam(required = false) String bizType,
             @RequestParam(defaultValue = "50") int limit) {
         String me = UserContextHolder.require().userId();
-        int cap = Math.min(Math.max(limit, 1), 200);
         // UNION ALL 两张表：请假有独立表（额度语义），其余 11 类在 business_doc。
         // 列名对齐后按 created_at 统一排序 —— 前端不该关心它们分别存在哪。
-        List<MyApplication> rows = jdbc.query("""
-                SELECT * FROM (
-                    SELECT 'LEAVE' AS biz_type, r.request_no AS doc_no, r.status,
-                           t.name || ' ' || r.days || ' 天' AS title,
-                           r.reason AS summary, NULL::numeric AS amount, r.days,
-                           r.created_at
-                      FROM oa_flow.leave_request r
-                      JOIN oa_flow.leave_type t ON t.id = r.leave_type_id
-                     WHERE r.user_id = ?
-                    UNION ALL
-                    SELECT d.biz_type, d.doc_no, d.status, d.title, d.summary,
-                           d.amount, d.days, d.created_at
-                      FROM oa_flow.business_doc d
-                     WHERE d.applicant_id = ?
-                ) x
-                WHERE (?::text IS NULL OR x.biz_type = ?::text)
-                ORDER BY x.created_at DESC
-                LIMIT ?
-                """, (rs, i) -> new MyApplication(
-                        rs.getString("biz_type"), rs.getString("doc_no"), rs.getString("status"),
-                        rs.getString("title"), rs.getString("summary"),
-                        rs.getBigDecimal("amount"), rs.getBigDecimal("days"),
-                        rs.getObject("created_at", java.time.OffsetDateTime.class)),
-                me, me, bizType, bizType, cap);
-        return Result.ok(rows);
+        return Result.ok(workbenchService.myApplications(me, bizType, limit));
     }
 }

@@ -65,7 +65,8 @@ public class DataScopeAspect {
         UserContext ctx = UserContextHolder.peek();
         DataScopeRule rule = (ctx == null)
                 ? DataScopeRule.none()
-                : engine.dataScopeForPermission(ctx.userId(), ann.permission());
+                : AuthorizationContext.effectiveScope(ann.permission())
+                .orElseGet(() -> engine.dataScopeForPermission(ctx.userId(), ann.permission()));
 
         DataScopeContext.Active active = DataScopeContext.push(ann, rule);
         try {

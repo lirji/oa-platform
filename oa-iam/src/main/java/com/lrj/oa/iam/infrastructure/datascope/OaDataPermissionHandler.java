@@ -110,25 +110,36 @@ public class OaDataPermissionHandler implements MultiDataPermissionHandler {
             case SELF -> "%s.%s = '%s'".formatted(a, ann.userColumn(), escape(rule.selfUserId()));
             case ORG -> rule.orgIds().isEmpty() ? "1 = 0"
                     : "%s.%s IN (%s)".formatted(a, ann.orgColumn(), joinIds(rule.orgIds()));
-            case ORG_AND_SUB, CUSTOM -> pathCondition(a, ann, rule);
+            case ORG_AND_SUB -> pathCondition(a, ann, rule);
+            case CUSTOM -> unionCondition(a, ann, rule);
         };
     }
 
     private String pathCondition(String alias, DataScope ann, DataScopeRule rule) {
         List<String> prefixes = rule.pathPrefixes();
-        if (prefixes.isEmpty()) return "1 = 0";
-
-        if (rule.shouldDegradeToIdList()) {
-            // 前缀太多时改用 id 列表：一长串 OR LIKE 反而更糟
-            log.debug("数据范围前缀 {} 个，超过阈值，降级为 id 列表", prefixes.size());
-            return rule.orgIds().isEmpty() ? "1 = 0"
-                    : "%s.%s IN (%s)".formatted(alias, ann.orgColumn(), joinIds(rule.orgIds()));
-        }
+        if (prefixes.isEmpty()) return rule.orgIds().isEmpty() ? "1 = 0"
+                : "%s.%s IN (%s)".formatted(alias, ann.orgColumn(), joinIds(rule.orgIds()));
 
         return prefixes.stream()
                 .peek(OaDataPermissionHandler::assertSafePath)
                 .map(p -> "%s.%s LIKE '%s%%'".formatted(alias, ann.pathColumn(), p))
                 .collect(Collectors.joining(" OR ", "(", ")"));
+    }
+
+    /** CUSTOM 也是范围并集的规范形式：组织子树、精确组织和本人任一命中即可。 */
+    private String unionCondition(String alias, DataScope ann, DataScopeRule rule) {
+        List<String> parts = new java.util.ArrayList<>();
+        for (String prefix : rule.pathPrefixes()) {
+            assertSafePath(prefix);
+            parts.add("%s.%s LIKE '%s%%'".formatted(alias, ann.pathColumn(), prefix));
+        }
+        if (!rule.orgIds().isEmpty()) {
+            parts.add("%s.%s IN (%s)".formatted(alias, ann.orgColumn(), joinIds(rule.orgIds())));
+        }
+        if (rule.selfUserId() != null && !rule.selfUserId().isBlank()) {
+            parts.add("%s.%s = '%s'".formatted(alias, ann.userColumn(), escape(rule.selfUserId())));
+        }
+        return parts.isEmpty() ? "1 = 0" : parts.stream().collect(Collectors.joining(" OR ", "(", ")"));
     }
 
     private static void assertSafePath(String path) {

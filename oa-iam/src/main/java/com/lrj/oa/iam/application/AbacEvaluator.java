@@ -21,6 +21,8 @@ import org.springframework.stereotype.Component;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /** 受限 ABAC 求值：只读快照和方法参数，运行期零 DB/零远程。 */
@@ -74,20 +76,24 @@ public class AbacEvaluator {
         }
     }
 
-    /** 多 branch 为 OR；每个 branch 内 conditions 为 AND；无条件来源优先放行。 */
-    public boolean allowed(PermissionSnapshot snapshot, String permCode, Method method,
+    public record Decision(boolean allowed, Set<Long> roleIds) {
+        static Decision denied() { return new Decision(false, Set.of()); }
+    }
+
+    /** 多 branch 为 OR；返回所有通过的角色来源，供数据范围只合并这些来源。 */
+    public Decision decide(PermissionSnapshot snapshot, String permCode, Method method,
                            Object[] args, UserContext user) {
-        if (!enabled) return true;
+        if (!enabled) return new Decision(true, Set.of());
         int permId = catalog.idOf(permCode);
-        if (permId < 0) return false;
-        if (snapshot.abacUnconditional(permId)) return true;
+        if (permId < 0) return Decision.denied();
+        LinkedHashSet<Long> passedRoles = new LinkedHashSet<>(snapshot.abacUnconditionalRoles(permId));
         List<AbacBranch> branches = snapshot.abacBranches().get(permId);
-        if (branches == null || branches.isEmpty()) {
+        if ((branches == null || branches.isEmpty()) && passedRoles.isEmpty()) {
             increment(denied);
-            return false;
+            return Decision.denied();
         }
         increment(evaluations);
-        for (AbacBranch branch : branches) {
+        for (AbacBranch branch : branches == null ? List.<AbacBranch>of() : branches) {
             boolean branchAllowed = true;
             for (AbacBranch.Condition condition : branch.conditions()) {
                 if (!evaluate(condition, method, args, user, permCode)) {
@@ -95,10 +101,16 @@ public class AbacEvaluator {
                     break;
                 }
             }
-            if (branchAllowed) return true;
+            if (branchAllowed) passedRoles.add(branch.roleId());
         }
+        if (!passedRoles.isEmpty()) return new Decision(true, Set.copyOf(passedRoles));
         increment(denied);
-        return false;
+        return Decision.denied();
+    }
+
+    public boolean allowed(PermissionSnapshot snapshot, String permCode, Method method,
+                           Object[] args, UserContext user) {
+        return decide(snapshot, permCode, method, args, user).allowed();
     }
 
     private boolean evaluate(AbacBranch.Condition condition, Method method, Object[] args,

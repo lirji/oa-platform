@@ -26,11 +26,12 @@ public class AnnouncementController {
     @RequiresPerm("oa:announce:publish")
     public Result<Map<String, Object>> publish(@RequestBody NotifyDtos.PublishAnnouncement cmd) {
         UserContext ctx = UserContextHolder.require();
+        List<String> recipients = AnnouncementService.normalizeRecipients(cmd.recipients());
         long t0 = System.currentTimeMillis();
         long id = service.publish(cmd, ctx.userId(), ctx.username());
         // 推送在发布事务提交之后：事务里推，接收端可能先收到再查库却查不到。
-        int delivered = service.broadcastPush(id, cmd.recipients(), cmd.title());
-        return Result.ok(Map.of("id", id, "audience", cmd.recipients().size(),
+        int delivered = service.broadcastPush(id, recipients, cmd.title());
+        return Result.ok(Map.of("id", id, "audience", recipients.size(),
                 "pushedSessions", delivered, "elapsedMs", System.currentTimeMillis() - t0));
     }
 

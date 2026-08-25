@@ -27,9 +27,11 @@ public final class PermissionSnapshot {
     private final DataScopeRule mergedScope;
     private final Map<String, DataScopeRule> moduleScope;
     private final Map<Integer, DataScopeRule> permissionScope;
+    private final Map<Integer, Map<Long, DataScopeRule>> permissionRoleScope;
     private final Set<String> delegators;
     private final boolean abacEnabled;
     private final RoaringBitmap abacUnconditionalBits;
+    private final Map<Integer, Set<Long>> abacUnconditionalRoles;
     private final Map<Integer, List<AbacBranch>> abacBranches;
     private final long builtAt;
     private final long expireAt;
@@ -44,9 +46,16 @@ public final class PermissionSnapshot {
         this.mergedScope = b.mergedScope;
         this.moduleScope = Map.copyOf(b.moduleScope);
         this.permissionScope = Map.copyOf(b.permissionScope);
+        Map<Integer, Map<Long, DataScopeRule>> roleScopes = new HashMap<>();
+        b.permissionRoleScope.forEach((permission, scopes) -> roleScopes.put(permission, Map.copyOf(scopes)));
+        this.permissionRoleScope = Map.copyOf(roleScopes);
         this.delegators = Set.copyOf(b.delegators);
         this.abacEnabled = b.abacEnabled;
         this.abacUnconditionalBits = b.abacUnconditionalBits;
+        Map<Integer, Set<Long>> unconditionalRoles = new HashMap<>();
+        b.abacUnconditionalRoles.forEach((permission, roles) ->
+                unconditionalRoles.put(permission, Set.copyOf(roles)));
+        this.abacUnconditionalRoles = Map.copyOf(unconditionalRoles);
         Map<Integer, List<AbacBranch>> branches = new HashMap<>();
         b.abacBranches.forEach((k, v) -> branches.put(k, List.copyOf(v)));
         this.abacBranches = Map.copyOf(branches);
@@ -69,6 +78,15 @@ public final class PermissionSnapshot {
         return permissionScope.getOrDefault(permId, DataScopeRule.none());
     }
 
+    /** 只合并本次 ABAC 真正通过的角色来源；空集合安全返回 NONE。 */
+    public DataScopeRule scopeOfPermissionRoles(int permId, Collection<Long> roleIds) {
+        if (permId < 0 || roleIds == null || roleIds.isEmpty()) return DataScopeRule.none();
+        Map<Long, DataScopeRule> byRole = permissionRoleScope.getOrDefault(permId, Map.of());
+        DataScopeRule result = DataScopeRule.none();
+        for (Long roleId : roleIds) result = widen(result, byRole.get(roleId));
+        return result;
+    }
+
     public boolean expired(long nowMs) { return nowMs >= expireAt; }
 
     // ── 访问器 ──────────────────────────────────────────
@@ -81,10 +99,15 @@ public final class PermissionSnapshot {
     public DataScopeRule mergedScope() { return mergedScope; }
     public Map<String, DataScopeRule> moduleScope() { return moduleScope; }
     public Map<Integer, DataScopeRule> permissionScope() { return permissionScope; }
+    public Map<Integer, Map<Long, DataScopeRule>> permissionRoleScope() { return permissionRoleScope; }
     public Set<String> delegators() { return delegators; }
     public boolean abacEnabled() { return abacEnabled; }
     public boolean abacUnconditional(int permId) { return abacUnconditionalBits.contains(permId); }
     public RoaringBitmap abacUnconditionalBits() { return abacUnconditionalBits; }
+    public Set<Long> abacUnconditionalRoles(int permId) {
+        return abacUnconditionalRoles.getOrDefault(permId, Set.of());
+    }
+    public Map<Integer, Set<Long>> abacUnconditionalRoles() { return abacUnconditionalRoles; }
     public Map<Integer, List<AbacBranch>> abacBranches() { return abacBranches; }
     public long builtAt() { return builtAt; }
     public long expireAt() { return expireAt; }
@@ -93,24 +116,27 @@ public final class PermissionSnapshot {
     public static Builder builder(String userId) { return new Builder(userId); }
 
     /**
-     * 合并两条数据范围规则，取<b>更宽</b>的那条；宽度相同则并集。
+     * 合并两条数据范围规则并取真正的集合并集。
      *
-     * <p>为什么是取宽不是取窄：一个人可能通过多条授权拿到同一模块的不同范围
-     * （主岗给了本部门、兼岗给了另一个部门），他理应能看到两边的并集。
-     * 取窄会让兼岗形同虚设。
+     * <p>范围类型不是一条全序：{@code SELF}、精确组织与另一个组织子树互不包含，
+     * 不能按一个“宽度”数字二选一。混合类型统一规范化为 {@code CUSTOM}，同时保留
+     * 路径前缀、精确组织和本人条件，由 SQL 处理器用 OR 组合。
      */
     public static DataScopeRule widen(DataScopeRule a, DataScopeRule b) {
         if (a == null) return b;
         if (b == null) return a;
-        if (a.type().width() > b.type().width()) return a;
-        if (b.type().width() > a.type().width()) return b;
-        // 同宽 → 并集
+        if (a.type() == DataScopeType.NONE) return b;
+        if (b.type() == DataScopeType.NONE) return a;
+        if (a.type() == DataScopeType.ALL || b.type() == DataScopeType.ALL) return DataScopeRule.all();
+
         LinkedHashSet<String> prefixes = new LinkedHashSet<>(a.pathPrefixes());
         prefixes.addAll(b.pathPrefixes());
         LinkedHashSet<Long> orgIds = new LinkedHashSet<>(a.orgIds());
         orgIds.addAll(b.orgIds());
-        return new DataScopeRule(a.type(), List.copyOf(prefixes), Set.copyOf(orgIds),
-                a.selfUserId() != null ? a.selfUserId() : b.selfUserId());
+        String selfUserId = a.selfUserId() != null ? a.selfUserId() : b.selfUserId();
+
+        DataScopeType resultType = a.type() == b.type() ? a.type() : DataScopeType.CUSTOM;
+        return new DataScopeRule(resultType, List.copyOf(prefixes), Set.copyOf(orgIds), selfUserId);
     }
 
     public static final class Builder {
@@ -123,9 +149,11 @@ public final class PermissionSnapshot {
         private DataScopeRule mergedScope = DataScopeRule.none();
         private final Map<String, DataScopeRule> moduleScope = new HashMap<>();
         private final Map<Integer, DataScopeRule> permissionScope = new HashMap<>();
+        private final Map<Integer, Map<Long, DataScopeRule>> permissionRoleScope = new HashMap<>();
         private Set<String> delegators = Set.of();
         private boolean abacEnabled;
         private final RoaringBitmap abacUnconditionalBits = new RoaringBitmap();
+        private final Map<Integer, Set<Long>> abacUnconditionalRoles = new HashMap<>();
         private final Map<Integer, LinkedHashSet<AbacBranch>> abacBranches = new HashMap<>();
         private long builtAt = System.currentTimeMillis();
         private long expireAt = Long.MAX_VALUE;
@@ -158,9 +186,21 @@ public final class PermissionSnapshot {
             return this;
         }
 
+        public Builder scope(long roleId, int permId, String module, DataScopeRule rule) {
+            scope(permId, module, rule);
+            permissionRoleScope.computeIfAbsent(permId, ignored -> new HashMap<>())
+                    .merge(roleId, rule, PermissionSnapshot::widen);
+            return this;
+        }
+
         public Builder delegators(Collection<String> v) { this.delegators = Set.copyOf(v); return this; }
         public Builder abacEnabled(boolean v) { this.abacEnabled = v; return this; }
         public Builder markAbacUnconditional(int permId) { abacUnconditionalBits.add(permId); return this; }
+        public Builder markAbacUnconditional(int permId, long roleId) {
+            markAbacUnconditional(permId);
+            abacUnconditionalRoles.computeIfAbsent(permId, ignored -> new LinkedHashSet<>()).add(roleId);
+            return this;
+        }
         public Builder addAbacBranch(int permId, AbacBranch branch) {
             abacBranches.computeIfAbsent(permId, ignored -> new LinkedHashSet<>()).add(branch);
             return this;
@@ -187,12 +227,21 @@ public final class PermissionSnapshot {
             return this;
         }
 
+        public Builder rawPermissionRoleScope(Map<Integer, Map<Long, DataScopeRule>> values) {
+            if (values != null) values.forEach((permission, scopes) ->
+                    this.permissionRoleScope.put(permission, new HashMap<>(scopes)));
+            return this;
+        }
+
         public Builder rawAbac(boolean enabled, RoaringBitmap unconditional,
-                               Map<Integer, List<AbacBranch>> branches) {
+                               Map<Integer, List<AbacBranch>> branches,
+                               Map<Integer, Set<Long>> unconditionalRoles) {
             this.abacEnabled = enabled;
             if (unconditional != null) this.abacUnconditionalBits.or(unconditional);
             if (branches != null) branches.forEach((id, values) ->
                     this.abacBranches.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).addAll(values));
+            if (unconditionalRoles != null) unconditionalRoles.forEach((id, values) ->
+                    this.abacUnconditionalRoles.put(id, new LinkedHashSet<>(values)));
             return this;
         }
 

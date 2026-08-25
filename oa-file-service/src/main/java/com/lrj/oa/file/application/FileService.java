@@ -1,7 +1,10 @@
 package com.lrj.oa.file.application;
 
 import com.lrj.oa.common.api.ResultCode;
+import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.common.exception.BusinessException;
+import com.lrj.oa.file.infrastructure.mapper.FileObjectMapper;
+import com.lrj.oa.security.annotation.ObjectScope;
 import com.lrj.oa.security.context.UserContext;
 import com.lrj.oa.security.context.UserContextHolder;
 import io.minio.GetObjectArgs;
@@ -12,7 +15,6 @@ import io.minio.http.Method;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,23 +41,25 @@ public class FileService {
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
     private final io.minio.MinioClient minio;
-    private final JdbcTemplate jdbc;
+    private final FileObjectMapper mapper;
     private final String bucket;
     private final long maxBytes;
     private final int presignSeconds;
 
-    public FileService(io.minio.MinioClient minio, JdbcTemplate jdbc,
+    public FileService(io.minio.MinioClient minio, FileObjectMapper mapper,
                        @Value("${oa.file.bucket:oa-files}") String bucket,
                        @Value("${oa.file.max-bytes:52428800}") long maxBytes,
                        @Value("${oa.file.presign-seconds:300}") int presignSeconds) {
         this.minio = minio;
-        this.jdbc = jdbc;
+        this.mapper = mapper;
         this.bucket = bucket;
         this.maxBytes = maxBytes;
         this.presignSeconds = presignSeconds;
     }
 
     @Transactional
+    @ObjectScope(permission = "oa:file:upload", tables = "oa_sys.file_object",
+            strategy = ObjectScope.Strategy.OWNER, reason = "上传元数据 owner 固定为当前用户")
     public Map<String, Object> upload(MultipartFile file, String bizType, String bizId) {
         UserContext ctx = UserContextHolder.require();
         if (file == null || file.isEmpty()) {
@@ -79,25 +83,19 @@ public class FileService {
         } catch (Exception e) {
             throw BusinessException.of(ResultCode.DEPENDENCY_UNAVAILABLE, "对象存储写入失败：" + e);
         }
-        Long id = jdbc.queryForObject("""
-                INSERT INTO oa_sys.file_object
-                    (object_key, bucket, file_name, content_type, size_bytes, sha256,
-                     biz_type, biz_id, owner_id, org_id, org_path)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id
-                """, Long.class, key, bucket, file.getOriginalFilename(), file.getContentType(),
-                file.getSize(), sha, bizType, bizId, ctx.userId(), ctx.primaryOrgId(), ctx.primaryOrgPath());
+        Long id = mapper.insert(TenantContext.get(), key, bucket, file.getOriginalFilename(),
+                file.getContentType(), file.getSize(), sha, bizType, bizId, ctx.userId(),
+                ctx.primaryOrgId(), ctx.primaryOrgPath());
         return Map.of("id", id == null ? 0L : id, "objectKey", key,
                 "size", file.getSize(), "sha256", sha);
     }
 
     /** 元数据 + 判权。下载与预签名都必须先过这里。 */
-    private Map<String, Object> requireAccessible(long fileId) {
+    private FileObjectMapper.FileRow requireAccessible(long fileId) {
         UserContext ctx = UserContextHolder.require();
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT * FROM oa_sys.file_object WHERE id = ?", fileId);
-        if (rows.isEmpty()) throw BusinessException.of(ResultCode.NOT_FOUND, "文件不存在");
-        Map<String, Object> f = rows.get(0);
-        String owner = (String) f.get("owner_id");
+        FileObjectMapper.FileRow f = mapper.selectById(TenantContext.get(), fileId);
+        if (f == null) throw BusinessException.of(ResultCode.NOT_FOUND, "文件不存在");
+        String owner = f.ownerId;
         // 首版规则：上传者本人可读。
         // ★ 刻意保守：文件的可见范围应当跟随它所属的业务对象（知识库文档的共享、
         //   审批单的参与人），那需要跨模块问业务侧。在那条链路接通之前，
@@ -110,12 +108,14 @@ public class FileService {
 
     public record Download(String fileName, String contentType, byte[] content) {}
 
+    @ObjectScope(permission = "oa:file:read", tables = "oa_sys.file_object",
+            strategy = ObjectScope.Strategy.OWNER, reason = "下载前校验文件 owner")
     public Download download(long fileId) {
-        Map<String, Object> f = requireAccessible(fileId);
+        FileObjectMapper.FileRow f = requireAccessible(fileId);
         try (InputStream in = minio.getObject(GetObjectArgs.builder()
-                .bucket((String) f.get("bucket")).object((String) f.get("object_key")).build())) {
-            return new Download((String) f.get("file_name"),
-                    (String) f.getOrDefault("content_type", "application/octet-stream"),
+                .bucket(f.bucket).object(f.objectKey).build())) {
+            return new Download(f.fileName,
+                    f.contentType == null ? "application/octet-stream" : f.contentType,
                     in.readAllBytes());
         } catch (Exception e) {
             throw BusinessException.of(ResultCode.DEPENDENCY_UNAVAILABLE, "对象存储读取失败：" + e);
@@ -129,13 +129,15 @@ public class FileService {
      * 预签名 URL 是直连对象存储的，签出去之后应用层再也管不着 ——
      * 它就是一张"凭票入场"的票，票的有效期就是泄露窗口。
      */
+    @ObjectScope(permission = "oa:file:read", tables = "oa_sys.file_object",
+            strategy = ObjectScope.Strategy.OWNER, reason = "预签名签发前校验文件 owner")
     public String presign(long fileId) {
-        Map<String, Object> f = requireAccessible(fileId);
+        FileObjectMapper.FileRow f = requireAccessible(fileId);
         try {
             return minio.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .method(Method.GET)
-                    .bucket((String) f.get("bucket"))
-                    .object((String) f.get("object_key"))
+                    .bucket(f.bucket)
+                    .object(f.objectKey)
                     .expiry(presignSeconds, TimeUnit.SECONDS)
                     .build());
         } catch (Exception e) {
@@ -144,23 +146,39 @@ public class FileService {
     }
 
     @Transactional
+    @ObjectScope(permission = "oa:file:upload", tables = "oa_sys.file_object",
+            strategy = ObjectScope.Strategy.OWNER, reason = "删除前校验文件 owner 且 DELETE 重复带 owner 条件")
     public void delete(long fileId) {
-        Map<String, Object> f = requireAccessible(fileId);
+        FileObjectMapper.FileRow f = requireAccessible(fileId);
+        String userId = UserContextHolder.require().userId();
         try {
             minio.removeObject(RemoveObjectArgs.builder()
-                    .bucket((String) f.get("bucket")).object((String) f.get("object_key")).build());
+                    .bucket(f.bucket).object(f.objectKey).build());
         } catch (Exception e) {
             log.warn("对象删除失败（元数据仍会删除，可能留下孤儿对象）：{}", e.toString());
         }
-        jdbc.update("DELETE FROM oa_sys.file_object WHERE id = ?", fileId);
+        if (mapper.deleteOwn(TenantContext.get(), fileId, userId) == 0) {
+            throw BusinessException.of(ResultCode.NOT_FOUND, "文件不存在或不属于当前用户");
+        }
     }
 
+    @ObjectScope(permission = "oa:file:read", tables = "oa_sys.file_object",
+            strategy = ObjectScope.Strategy.OWNER, reason = "列表 SQL 固定 owner_id 为当前用户")
     public List<Map<String, Object>> myFiles(int limit) {
         UserContext ctx = UserContextHolder.require();
-        return jdbc.queryForList("""
-                SELECT id, file_name, content_type, size_bytes, sha256, biz_type, biz_id, created_at
-                  FROM oa_sys.file_object WHERE owner_id = ? ORDER BY id DESC LIMIT ?
-                """, ctx.userId(), Math.min(Math.max(limit, 1), 200));
+        return mapper.selectOwn(TenantContext.get(), ctx.userId(), Math.min(Math.max(limit, 1), 200))
+                .stream().map(f -> {
+                    Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("id", f.id);
+                    row.put("file_name", f.fileName);
+                    row.put("content_type", f.contentType);
+                    row.put("size_bytes", f.sizeBytes);
+                    row.put("sha256", f.sha256);
+                    row.put("biz_type", f.bizType);
+                    row.put("biz_id", f.bizId);
+                    row.put("created_at", f.createdAt);
+                    return row;
+                }).toList();
     }
 
     private static String sha256(byte[] bytes) {

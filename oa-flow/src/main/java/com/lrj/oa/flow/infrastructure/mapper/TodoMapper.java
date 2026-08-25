@@ -50,25 +50,33 @@ public interface TodoMapper {
     @Select("""
             <script>
             SELECT t.id, t.task_id AS taskId, t.process_instance_id AS processInstanceId,
+                   i.process_definition_key AS processDefinitionKey,
                    t.instance_id AS instanceId, t.biz_type AS bizType, t.title, t.summary,
                    t.applicant_user_id AS applicantUserId, t.applicant_name AS applicantName,
-                   t.assignee_user_id AS assigneeUserId, t.state, t.org_id AS orgId,
+                   t.assignee_user_id AS assigneeUserId, t.candidate_group AS candidateGroup,
+                   t.state, t.org_id AS orgId,
                    t.org_path AS orgPath, t.created_at AS createdAt, t.due_at AS dueAt
               FROM oa_flow.todo_item t
+              LEFT JOIN oa_flow.approval_instance i
+                ON i.tenant_id = t.tenant_id AND i.id = t.instance_id
              WHERE t.state = 'PENDING'
+               AND t.tenant_id = #{tenantId}
                AND t.assignee_user_id IN
                <foreach item="a" collection="assignees" open="(" separator="," close=")">#{a}</foreach>
              ORDER BY t.created_at DESC
              LIMIT #{limit}
             </script>
             """)
-    List<TodoView> selectPending(@Param("assignees") Collection<String> assignees, @Param("limit") int limit);
+    List<TodoView> selectPending(@Param("tenantId") long tenantId,
+                                 @Param("assignees") Collection<String> assignees,
+                                 @Param("limit") int limit);
 
     @Select("""
             SELECT count(*) FROM oa_flow.todo_item t
-             WHERE t.state = 'PENDING' AND t.assignee_user_id = #{userId}
+             WHERE t.state = 'PENDING' AND t.tenant_id = #{tenantId}
+               AND t.assignee_user_id = #{userId}
             """)
-    long countPending(@Param("userId") String userId);
+    long countPending(@Param("tenantId") long tenantId, @Param("userId") String userId);
 
     @Select("SELECT task_id FROM oa_flow.todo_item WHERE state = 'PENDING' AND tenant_id = #{tenantId}")
     List<String> selectPendingTaskIds(@Param("tenantId") Long tenantId);

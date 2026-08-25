@@ -26,8 +26,9 @@ public final class FlowMappers {
 
     @Mapper
     public interface ApprovalInstanceMapper extends BaseMapper<ApprovalInstance> {
-        @Select("SELECT * FROM oa_flow.approval_instance WHERE biz_type = #{bizType} AND business_key = #{businessKey}")
-        ApprovalInstance selectByBusiness(@Param("bizType") String bizType, @Param("businessKey") String businessKey);
+        @Select("SELECT * FROM oa_flow.approval_instance WHERE tenant_id=#{tenantId} AND biz_type=#{bizType} AND business_key=#{businessKey}")
+        ApprovalInstance selectByBusiness(@Param("tenantId") long tenantId, @Param("bizType") String bizType,
+                                          @Param("businessKey") String businessKey);
 
         @Select("SELECT * FROM oa_flow.approval_instance WHERE process_instance_id = #{pid}")
         ApprovalInstance selectByProcessInstance(@Param("pid") String pid);
@@ -43,6 +44,22 @@ public final class FlowMappers {
                  LIMIT #{limit}
                 """)
         List<ApprovalInstance> selectUnfinished(@Param("limit") int limit);
+
+        @Insert("""
+                INSERT INTO oa_flow.approval_node_log
+                    (instance_id, task_id, node_name, actor_user_id, on_behalf_of, action, comment)
+                VALUES (#{instanceId}, #{taskId}, #{nodeName}, #{actorUserId}, #{onBehalfOf}, #{action}, #{comment})
+                """)
+        int insertNodeLog(@Param("instanceId") Long instanceId, @Param("taskId") String taskId,
+                          @Param("nodeName") String nodeName, @Param("actorUserId") String actorUserId,
+                          @Param("onBehalfOf") String onBehalfOf, @Param("action") String action,
+                          @Param("comment") String comment);
+
+        @Update("UPDATE oa_flow.approval_instance SET status='FINISHED', outcome=#{outcome}, finished_at=now() WHERE id=#{id} AND status&lt;&gt;'FINISHED'")
+        int finish(@Param("id") Long id, @Param("outcome") String outcome);
+
+        @Select("SELECT action FROM oa_flow.approval_node_log WHERE instance_id=#{instanceId} ORDER BY id DESC LIMIT 1")
+        String lastAction(@Param("instanceId") Long instanceId);
     }
 
     @Mapper
@@ -56,8 +73,8 @@ public final class FlowMappers {
 
     @Mapper
     public interface LeaveRequestMapper extends BaseMapper<LeaveRequest> {
-        @Select("SELECT * FROM oa_flow.leave_request WHERE request_no = #{no}")
-        LeaveRequest selectByNo(@Param("no") String no);
+        @Select("SELECT * FROM oa_flow.leave_request WHERE tenant_id=#{tenantId} AND request_no=#{no}")
+        LeaveRequest selectByNo(@Param("tenantId") long tenantId, @Param("no") String no);
     }
 
     @Mapper

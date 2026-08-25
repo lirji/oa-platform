@@ -2,6 +2,7 @@ package com.lrj.oa.app;
 
 import com.lrj.oa.security.annotation.DataScope;
 import com.lrj.oa.security.annotation.DataScopeBypass;
+import com.lrj.oa.security.annotation.ObjectScope;
 import com.lrj.oa.iam.infrastructure.datascope.GovernedTableRegistry;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -49,6 +50,15 @@ class DataAccessSurfaceGoldenTest {
                             .doesNotMatch(".*\\.(web|application)(\\..*)?$");
                     actual.add("%s#%s BYPASS - %s - -".formatted(
                             owner.getName(), method.getName(), String.join(",", bypass.tables())));
+                }
+                if (method.isAnnotatedWith(ObjectScope.class)) {
+                    ObjectScope scope = method.getAnnotationOfType(ObjectScope.class);
+                    assertThat(scope.permission()).as(method.getFullName()).isNotBlank();
+                    assertThat(scope.reason()).as(method.getFullName()).isNotBlank();
+                    assertThat(scope.tables()).as(method.getFullName()).isNotEmpty().allMatch(t -> !t.isBlank());
+                    actual.add("%s#%s OBJECT_%s %s %s - -".formatted(
+                            owner.getName(), method.getName(), scope.strategy(), scope.permission(),
+                            String.join(",", scope.tables())));
                 }
             }
         }

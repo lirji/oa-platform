@@ -16,6 +16,7 @@
 | Phase 3 · 6 | PC 前端 `oa-console` · 移动端 `oa-mobile` | ✅ 发布关卡 14/14 · 13/13 |
 | 交付收口 | OpenAPI 契约 / CI / JWT+WS / 全链路压测 | ✅ 全部通过 |
 | 权限增强 | USER_GROUP 显式成员组 / 受限 ABAC 条件引擎 | ✅ Phase 9 冒烟通过 |
+| 角色治理 | 自定义角色 CRUD / 权限矩阵 / 角色继承 / 启停与审计 | ✅ 全链路验收通过 |
 
 **后端 231 条阶段冒烟断言全绿，PC、移动端、JWT/WebSocket 和发布门禁均已完成。**
 最终验收证据见 [`docs/delivery/oa-platform-completion/`](docs/delivery/oa-platform-completion/)。
@@ -97,8 +98,18 @@ docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps up -d
 curl -s localhost:8400/api/v1/system/ping
 ```
 
+发布前完整冷构建：
+
+```bash
+OA_BUILD_RUN_TESTS=true OA_DOCKER_PULL=true OA_DOCKER_NO_CACHE=true bash deploy/build-images.sh
+```
+
 入口：PC `http://localhost:8404`，移动端 `http://localhost:8405`。生产默认 `JWT`；
 `DEV` 只供本地冒烟显式使用，JWT 模式会拒绝 `X-OA-User` 身份覆盖。
+若 `deploy/.env` 覆盖了端口，应以 `docker compose ... ps` 显示的宿主端口为准。
+
+只更新应用镜像时无需重启数据库等基建：重新运行 `build-images.sh` 后，对
+`oa-app oa-notify oa-file oa-job oa-console oa-mobile` 执行 `up -d --force-recreate` 即可。
 
 ### 前端本地开发与契约
 
@@ -182,7 +193,7 @@ oa-security        JWT/UserContext/@RequiresPerm/@DataScope/@Sensitive/@PublicAp
                    ★ 只定义判权端口，不含实现——任何模块依赖注解都不会把权限域实现拖进来
 oa-org             组织域 + OrgTreeCache（COW 内存树）+ OrgQueryApi
 oa-iam             权限域 + PermissionEngine 三级缓存（PermissionChecker 的实现方）
-                   + USER_GROUP 时间窗成员 + 快照化受限 ABAC 条件分支
+                   + 在线角色/权限矩阵/继承治理 + USER_GROUP 时间窗成员 + 快照化受限 ABAC 条件分支
 oa-flow            表单引擎 + 审批 + 事务发件箱 + 待办读模型 + 请假
 oa-attendance      排班 / 打卡削峰 / 日结
 oa-doc oa-admin-biz oa-report    公文/知识库、行政、报表/审计
@@ -218,6 +229,8 @@ oa-mobile          员工 H5 :5474 / :8405（待办、打卡、通讯录、公�
 | [docs/ADR.md](docs/ADR.md) | 决策记录，含**被否掉的方案**与实现期新增的决策 |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | 运维手册：启停、排障、**踩过的坑清单** |
 | [docs/API.md](docs/API.md) | 接口一览与权限点对照 |
+| [docs/DATABASES_AND_COMPONENTS.md](docs/DATABASES_AND_COMPONENTS.md) | 数据库、缓存、消息队列、对象存储、外部平台与前后端组件清单 |
+| [角色管理交付报告](docs/delivery/role-management/DELIVERY_REPORT.md) | 角色治理范围、验收证据、发布与回滚说明 |
 | [数据权限全局保障方案](docs/plans/data-permission-global-guard/FINAL_PLAN.md) | 已落地的平台强制协议、全仓迁移阶段与验收标准 |
 | `docs/plans/oa-platform-0819-1721/` | 原始规划（FINAL_PLAN 845 行）与**权威进度文件** |
 | `docs/plans/oa-console-0820-0500/` | PC 控制台的决策记录与 15 步实施计划 |

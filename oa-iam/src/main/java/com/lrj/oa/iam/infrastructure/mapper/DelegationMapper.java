@@ -12,17 +12,23 @@ import java.util.List;
 @Mapper
 public interface DelegationMapper extends BaseMapper<Delegation> {
 
-    /** 我正在代理谁。待办查询用它扩展 assignee 集合。 */
+    /** 当前生效的结构化委托规则。查询和办理必须消费同一批规则。 */
     @Select("""
-            SELECT delegator_user_id FROM oa_iam.delegation
-             WHERE delegatee_user_id = #{userId} AND status = 'ACTIVE'
+            SELECT * FROM oa_iam.delegation
+             WHERE tenant_id = #{tenantId} AND delegatee_user_id = #{userId} AND status = 'ACTIVE'
                AND valid_from <= now() AND (valid_to IS NULL OR valid_to > now())
             """)
-    List<String> selectDelegatorsOf(@Param("userId") String userId);
+    List<Delegation> selectActiveForDelegatee(@Param("tenantId") long tenantId,
+                                               @Param("userId") String userId);
 
-    @Select("SELECT * FROM oa_iam.delegation WHERE delegator_user_id = #{userId} ORDER BY id DESC")
-    List<Delegation> selectByDelegator(@Param("userId") String userId);
+    default List<String> selectDelegatorsOf(long tenantId, String userId) {
+        return selectActiveForDelegatee(tenantId, userId).stream()
+                .map(Delegation::getDelegatorUserId).distinct().toList();
+    }
 
-    @Update("UPDATE oa_iam.delegation SET status = 'REVOKED' WHERE id = #{id} AND status = 'ACTIVE'")
-    int revoke(@Param("id") Long id);
+    @Select("SELECT * FROM oa_iam.delegation WHERE tenant_id = #{tenantId} AND delegator_user_id = #{userId} ORDER BY id DESC")
+    List<Delegation> selectByDelegator(@Param("tenantId") long tenantId, @Param("userId") String userId);
+
+    @Update("UPDATE oa_iam.delegation SET status = 'REVOKED' WHERE tenant_id = #{tenantId} AND id = #{id} AND status = 'ACTIVE'")
+    int revoke(@Param("tenantId") long tenantId, @Param("id") Long id);
 }

@@ -16,7 +16,7 @@ public final class IamCommands {
             @NotBlank String subjectType,          // USER | ORG_UNIT | POSITION | USER_GROUP
             @NotBlank String subjectId,
             @NotNull  Long roleId,
-            @NotBlank String scopeType,            // ALL|ORG_AND_SUB|ORG|SELF|CUSTOM
+            String scopeType,                      // 空时采用角色默认；ALL|ORG_AND_SUB|ORG|SELF|CUSTOM|NONE
             List<Long> scopeOrgIds,
             Boolean includeDescendants,
             String grantType,                      // PERMANENT(默认) | TEMPORARY
@@ -31,6 +31,8 @@ public final class IamCommands {
             @NotBlank String reason,
             Integer hours
     ) {}
+
+    public record ElevationDecision(String reason) {}
 
     /** 委托代理：把待办与职权临时交给他人。不会让代理人获得委托人的其它权限。 */
     public record Delegate(
@@ -51,6 +53,39 @@ public final class IamCommands {
             @NotEmpty List<@NotBlank String> userIds,
             OffsetDateTime validFrom,
             OffsetDateTime validTo
+    ) {}
+
+    public record CreateRole(
+            @NotBlank String code,
+            @NotBlank String name,
+            @NotBlank String defaultScope,
+            String remark,
+            List<@NotNull Long> permissionIds,
+            List<@NotNull Long> inheritedRoleIds
+    ) {}
+
+    public record UpdateRole(
+            @NotBlank String name,
+            @NotBlank String defaultScope,
+            String remark,
+            @NotNull Integer version
+    ) {}
+
+    public record CopyRole(
+            @NotBlank String code,
+            @NotBlank String name
+    ) {}
+
+    public record SetRoleEnabled(@NotNull Boolean enabled, @NotNull Integer version) {}
+
+    public record ReplaceRolePermissions(
+            @NotNull List<@NotNull Long> permissionIds,
+            @NotNull Integer version
+    ) {}
+
+    public record ReplaceRoleInheritance(
+            @NotNull List<@NotNull Long> inheritedRoleIds,
+            @NotNull Integer version
     ) {}
 
     public record AbacCondition(

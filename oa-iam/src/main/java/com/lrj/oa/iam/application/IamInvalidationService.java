@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
-/** USER_GROUP/ABAC 写侧共用的全局收权协议。 */
+/** IAM 角色、USER_GROUP、ABAC 写侧共用的全局收权协议。 */
 @Component
 public class IamInvalidationService {
     private static final Logger log = LoggerFactory.getLogger(IamInvalidationService.class);
@@ -28,6 +28,6 @@ public class IamInvalidationService {
         versions.bumpEpoch();
         engine.evictAllLocal();
         if (bus != null) bus.publish(CacheInvalidation.TYPE_PERM_EPOCH, "");
-        log.info("USER_GROUP/ABAC 推进全局权限纪元：{}", reason);
+        log.info("IAM 写操作推进全局权限纪元：{}", reason);
     }
 }

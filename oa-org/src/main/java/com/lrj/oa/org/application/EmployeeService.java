@@ -8,7 +8,9 @@ import com.lrj.oa.org.api.event.EmployeeAssignmentChangedEvent;
 import com.lrj.oa.org.application.command.OrgCommands;
 import com.lrj.oa.org.domain.*;
 import com.lrj.oa.org.infrastructure.mapper.*;
+import com.lrj.oa.org.infrastructure.cache.OrgTreeCache;
 import com.lrj.oa.security.context.UserContextHolder;
+import com.lrj.oa.security.port.DataScopeAccessChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -32,20 +34,26 @@ public class EmployeeService {
     private final OrgUnitMapper orgUnitMapper;
     private final SensitiveCrypto crypto;
     private final ApplicationEventPublisher events;
+    private final OrgTreeCache treeCache;
+    private final DataScopeAccessChecker dataScope;
 
     public EmployeeService(EmployeeMapper employeeMapper, AssignmentMapper assignmentMapper,
                            ReportingLineMapper reportingLineMapper, OrgUnitMapper orgUnitMapper,
-                           SensitiveCrypto crypto, ApplicationEventPublisher events) {
+                           SensitiveCrypto crypto, ApplicationEventPublisher events,
+                           OrgTreeCache treeCache, DataScopeAccessChecker dataScope) {
         this.employeeMapper = employeeMapper;
         this.assignmentMapper = assignmentMapper;
         this.reportingLineMapper = reportingLineMapper;
         this.orgUnitMapper = orgUnitMapper;
         this.crypto = crypto;
         this.events = events;
+        this.treeCache = treeCache;
+        this.dataScope = dataScope;
     }
 
     @Transactional
     public Long create(OrgCommands.CreateEmployee cmd) {
+        requireOrgScope("oa:employee:create", cmd.primaryOrgId(), cmd.userId());
         if (orgUnitMapper.selectById(cmd.primaryOrgId()) == null) {
             throw BusinessException.of(ResultCode.ORG_NOT_FOUND, "主岗组织不存在: " + cmd.primaryOrgId());
         }
@@ -81,7 +89,8 @@ public class EmployeeService {
                 AssignmentType.PRIMARY, false, LocalDate.now());
 
         if (cmd.managerEmployeeId() != null) {
-            setReportingLine(e.getId(), new OrgCommands.SetReportingLine(
+            requireScopedEmployee(cmd.managerEmployeeId(), "oa:employee:create");
+            writeReportingLine(e.getId(), new OrgCommands.SetReportingLine(
                     cmd.managerEmployeeId(), ReportingType.SOLID.name(), LocalDate.now()));
         }
 
@@ -91,7 +100,7 @@ public class EmployeeService {
 
     @Transactional
     public void update(Long employeeId, OrgCommands.UpdateEmployee cmd) {
-        Employee e = requireEmployee(employeeId);
+        Employee e = requireScopedEmployee(employeeId, "oa:employee:update");
         if (cmd.name() != null) e.setName(cmd.name());
         if (cmd.enName() != null) e.setEnName(cmd.enName());
         if (cmd.email() != null) e.setEmail(cmd.email());
@@ -115,7 +124,8 @@ public class EmployeeService {
      */
     @Transactional
     public void transfer(Long employeeId, OrgCommands.TransferEmployee cmd) {
-        requireEmployee(employeeId);
+        requireScopedEmployee(employeeId, "oa:employee:transfer");
+        requireOrgScope("oa:employee:transfer", cmd.targetOrgId(), null);
         if (orgUnitMapper.selectById(cmd.targetOrgId()) == null) {
             throw BusinessException.of(ResultCode.ORG_NOT_FOUND, "目标组织不存在: " + cmd.targetOrgId());
         }
@@ -141,7 +151,8 @@ public class EmployeeService {
     /** 加兼岗或虚线归属。主岗请走 {@link #transfer}。 */
     @Transactional
     public Long addAssignment(Long employeeId, OrgCommands.AddAssignment cmd) {
-        requireEmployee(employeeId);
+        requireScopedEmployee(employeeId, "oa:employee:transfer");
+        requireOrgScope("oa:employee:transfer", cmd.orgUnitId(), null);
         AssignmentType type;
         try {
             type = AssignmentType.valueOf(cmd.assignmentType());
@@ -168,6 +179,8 @@ public class EmployeeService {
         if (a == null || !a.active()) {
             throw BusinessException.of(ResultCode.NOT_FOUND, "任职关系不存在或已关闭: " + assignmentId);
         }
+        Employee employee = requireScopedEmployee(a.getEmployeeId(), "oa:employee:transfer");
+        requireOrgScope("oa:employee:transfer", a.getOrgUnitId(), employee.getUserId());
         if (a.typeEnum() == AssignmentType.PRIMARY) {
             throw BusinessException.of(ResultCode.CONFLICT, "不能直接关闭主岗，请走调岗或离职");
         }
@@ -177,11 +190,15 @@ public class EmployeeService {
 
     @Transactional
     public void setReportingLine(Long employeeId, OrgCommands.SetReportingLine cmd) {
-        requireEmployee(employeeId);
+        requireScopedEmployee(employeeId, "oa:employee:transfer");
         if (employeeId.equals(cmd.managerEmployeeId())) {
             throw BusinessException.of(ResultCode.BAD_REQUEST, "不能把自己设为自己的上级");
         }
-        requireEmployee(cmd.managerEmployeeId());
+        requireScopedEmployee(cmd.managerEmployeeId(), "oa:employee:transfer");
+        writeReportingLine(employeeId, cmd);
+    }
+
+    private void writeReportingLine(Long employeeId, OrgCommands.SetReportingLine cmd) {
         ReportingType type;
         try {
             type = ReportingType.valueOf(cmd.type());
@@ -215,7 +232,7 @@ public class EmployeeService {
     /** 离职。关闭全部任职与汇报线，员工置 LEFT；行一律不删。 */
     @Transactional
     public void leave(Long employeeId, LocalDate leaveDate) {
-        Employee e = requireEmployee(employeeId);
+        Employee e = requireScopedEmployee(employeeId, "oa:employee:leave");
         LocalDate day = leaveDate == null ? LocalDate.now() : leaveDate;
         assignmentMapper.selectActiveByEmployee(employeeId)
                 .forEach(a -> assignmentMapper.close(a.getId(), day));
@@ -256,14 +273,28 @@ public class EmployeeService {
     }
 
     private void publishAssignmentChanged(Long employeeId, String reason) {
-        Employee e = employeeMapper.selectById(employeeId);
+        Employee e = employeeMapper.selectTenantById(TenantContext.get(), employeeId);
         if (e != null) events.publishEvent(EmployeeAssignmentChangedEvent.of(e.getUserId(), reason));
     }
 
     private Employee requireEmployee(Long id) {
-        Employee e = employeeMapper.selectById(id);
+        Employee e = employeeMapper.selectTenantById(TenantContext.get(), id);
         if (e == null) throw BusinessException.of(ResultCode.EMPLOYEE_NOT_FOUND, "员工不存在: " + id);
         return e;
+    }
+
+    private Employee requireScopedEmployee(Long id, String permission) {
+        Employee e = requireEmployee(id);
+        EmployeeOrgAssignment primary = assignmentMapper.selectActiveByEmployee(id).stream()
+                .filter(a -> a.typeEnum() == AssignmentType.PRIMARY)
+                .findFirst().orElse(null);
+        Long orgId = primary == null ? null : primary.getOrgUnitId();
+        dataScope.require(permission, orgId, orgId == null ? null : treeCache.snapshot().pathOf(orgId), e.getUserId());
+        return e;
+    }
+
+    private void requireOrgScope(String permission, Long orgId, String ownerUserId) {
+        dataScope.require(permission, orgId, orgId == null ? null : treeCache.snapshot().pathOf(orgId), ownerUserId);
     }
 
     private static String currentUser() {

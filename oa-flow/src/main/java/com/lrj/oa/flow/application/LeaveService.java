@@ -13,6 +13,8 @@ import com.lrj.oa.flow.domain.LeaveType;
 import com.lrj.oa.flow.infrastructure.mapper.FlowMappers;
 import com.lrj.oa.security.context.UserContext;
 import com.lrj.oa.security.context.UserContextHolder;
+import com.lrj.oa.security.annotation.ObjectScope;
+import com.lrj.oa.security.port.DataScopeAccessChecker;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,16 +50,19 @@ public class LeaveService {
     private final ApprovalService approvalService;
     private final ApproverResolver approverResolver;
     private final SegmentIdGenerator idGenerator;
+    private final DataScopeAccessChecker dataScope;
 
     public LeaveService(FlowMappers.LeaveRequestMapper requestMapper, FlowMappers.LeaveTypeMapper typeMapper,
                         FlowMappers.LeaveBalanceMapper balanceMapper, ApprovalService approvalService,
-                        ApproverResolver approverResolver, SegmentIdGenerator idGenerator) {
+                        ApproverResolver approverResolver, SegmentIdGenerator idGenerator,
+                        DataScopeAccessChecker dataScope) {
         this.requestMapper = requestMapper;
         this.typeMapper = typeMapper;
         this.balanceMapper = balanceMapper;
         this.approvalService = approvalService;
         this.approverResolver = approverResolver;
         this.idGenerator = idGenerator;
+        this.dataScope = dataScope;
     }
 
     @PostConstruct
@@ -128,7 +133,7 @@ public class LeaveService {
 
     @Transactional
     public void onApprovalFinished(String requestNo, String outcome) {
-        LeaveRequest req = requestMapper.selectByNo(requestNo);
+        LeaveRequest req = requestMapper.selectByNo(TenantContext.get(), requestNo);
         if (req == null) { log.warn("审批结束但找不到请假单 {}", requestNo); return; }
         LeaveType type = typeMapper.selectById(req.getLeaveTypeId());
 
@@ -227,9 +232,13 @@ public class LeaveService {
     /** 可用的假期类型。经服务层暴露，Controller 不直连 Mapper（ArchUnit 会拦）。 */
     public List<LeaveType> activeTypes() { return typeMapper.selectActive(); }
 
+    @ObjectScope(permission = "oa:leave:view", tables = "oa_flow.leave_request",
+            strategy = ObjectScope.Strategy.DATA_SCOPE,
+            reason = "详情读取前按单据发生时组织和申请人执行权限点级范围断言")
     public LeaveRequestView findByNo(String requestNo) {
-        LeaveRequest req = requestMapper.selectByNo(requestNo);
+        LeaveRequest req = requestMapper.selectByNo(TenantContext.get(), requestNo);
         if (req == null) throw BusinessException.of(ResultCode.NOT_FOUND, "请假单不存在: " + requestNo);
+        dataScope.require("oa:leave:view", req.getOrgId(), req.getOrgPath(), req.getUserId());
         return toView(req, typeMapper.selectById(req.getLeaveTypeId()), null);
     }
 

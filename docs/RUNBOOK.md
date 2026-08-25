@@ -18,6 +18,10 @@ bash deploy/scripts/provision-oa-casdoor.sh  # localhost：幂等注册 OA SPA
 bash deploy/build-images.sh
 docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps up -d
 
+# 已有全栈只更新应用：保留 PostgreSQL/Redis/Kafka/MinIO 与数据卷
+docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps up -d --force-recreate \
+  oa-app oa-notify oa-file oa-job oa-console oa-mobile
+
 # 收尾
 docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps down
 pkill -f 'oa-app-.*\.jar'
@@ -28,6 +32,13 @@ pkill -f 'oa-app-.*\.jar'
 
 `build-images.sh` 默认从当前源码构建四个后端、PC、移动端共六个镜像。只验证某一前端时可用
 `OA_BUILD_CONSOLE=false` 或 `OA_BUILD_MOBILE=false` 跳过另一端，不能复用来源不明的旧后端 tag。
+完整冷构建使用：
+
+```bash
+OA_BUILD_RUN_TESTS=true OA_DOCKER_PULL=true OA_DOCKER_NO_CACHE=true bash deploy/build-images.sh
+```
+
+该命令先执行全仓 `mvn clean package`，再对六个镜像执行 `docker build --pull --no-cache`。
 
 > ⚠️ 9092 属 langchain4j-platform、29092/25432 属 workflow-platform、15432 属 auth-platform，
 > **别动别人的容器**。
@@ -44,6 +55,9 @@ pkill -f 'oa-app-.*\.jar'
 | 闭包一致性 | `GET /api/v1/org/units/consistency` | `inconsistencies: 0` |
 | 判权缓存 | `GET /api/v1/iam/admin/cache-stats` | **`shadowMismatches: 0`** |
 | 判权延迟 | `GET /api/v1/iam/admin/bench?userId=…` | `p99Us < 1000` |
+| 角色管理迁移 | 查询 `flyway_schema_history` 的 version=16 | `success=true`，`role_inherit_edge` 存在 |
+| JIT 审批迁移 | 查询 `flyway_schema_history` 的 version=17 | `success=true`，`elevation_request` 与审批权限存在 |
+| 角色管理契约 | `GET /v3/api-docs` 检查 `/api/v1/iam/role-admin` | 9 个管理端点存在；无 token 调用返回 401 |
 | 数据权限严格执行 | `/actuator/metrics/oa_data_scope_missing_total` 与 `...alias_mismatch_total` | 不增长；任何增长立即排查 |
 | 发件箱 | `GET /api/v1/flow/admin/status` | `dead: 0`，`pending` 不持续增长 |
 | 打卡链路 | `GET /api/v1/attendance/admin/stats` | `deadLettered: 0`，`duplicates: 0` |
@@ -69,6 +83,15 @@ pkill -f 'oa-app-.*\.jar'
 
 **收权最长 1 秒生效**（本地纪元缓存窗口），**给个人加权在本节点立即生效**、
 跨节点靠失效总线（毫秒）或 TTL（5 分钟）兜底。
+
+### 「角色保存冲突、停用后权限仍存在」
+
+- HTTP 409 且提示版本冲突：另一管理员已更新该角色。重新读取详情取得新 `version`，核对差异后再提交；
+  不要直接改库或重复覆盖。
+- 继承保存 409：检查是否继承自己、形成环路，或引用了其他租户/已删除角色。
+- 停用后新授权或 JIT 应直接拒绝；已有权限最长按纪元刷新窗口在 1 秒内退出。超过窗口时检查
+  `role-status#<id>` 失效日志、`perm_epoch` 是否推进，以及 `role_inherit` 是否仍包含该停用角色。
+- 角色无法删除通常表示仍有 `grant_record` 历史。该保护是审计要求；应停用角色或保留记录，不能物理删表。
 
 ### 「查出来的数据比预期多/少」
 
@@ -209,9 +232,28 @@ OA_NOTIFY_BASE=http://127.0.0.1:8401 OA_ADMIN=seed-user-1 \
   java deploy/scripts/FullChainLoadTest.java http://127.0.0.1:18400 1000 20
 ```
 
-Phase 3 覆盖 PC 契约、105 条单测、50 条浏览器 E2E、镜像与代理；Phase 4 覆盖真实 Casdoor、
+Phase 3 覆盖 PC 契约、当前 107 条单测、50 条浏览器 E2E、镜像与代理；Phase 4 覆盖真实 Casdoor、
 四服务 JWT 与一次性 WS ticket；Phase 5 覆盖移动四主流程、390/320px、镜像与代理。
 全链路压测必须 0 失败且每个场景 P99 低于程序内预算。详细基线见交付 QA 报告。
+
+### 在线角色管理发布与回退
+
+1. 发布前备份数据库并完成后端、PC 契约/测试/构建门禁。V16 是附加迁移，会从既有一跳闭包回填
+   `role_inherit_edge`，先发布 `oa-app` 并确认 Flyway V16 成功，再发布 `oa-console`。
+2. 发布后核对 9 个 `/api/v1/iam/role-admin` OpenAPI 路径、无 token 401、管理账号角色列表，以及
+   `role_inherit_edge` / `role_inherit` 数量和 `oa_perm_mismatch_total`。
+3. 应用异常时可回退前后端镜像；旧代码继续读取 `role_inherit`。保留 V16 新表，不执行 `DROP TABLE`。
+   已产生的角色业务变更按审计记录做反向管理操作，不能用数据库回滚覆盖后续授权数据。
+
+### 权限加固与 JIT 四眼审批发布
+
+1. 先部署后端并确认 Flyway V17、报表 V83 成功，再部署控制台；不要删除既有 Redis 数据，快照 codec
+   版本不兼容时会 fail-safe 重建。
+2. 使用两个不同管理员账号验证：员工提交 JIT 申请后权限未变化，申请人自批返回 403，第二人批准后
+   `elevation_request.grant_id` 与 `grant_record.approval_instance_id` 双向可定位。
+3. 对 CUSTOM 角色执行区域内成功、区域外空列表/403 的 IDOR 烟测，并观察
+   `oa_data_scope_missing_total`、`oa_data_scope_alias_mismatch_total` 与拒绝审计。
+4. 应用可回退到旧镜像；V17/V83 均为向前附加迁移，保留表和视图。已批准的临时授权按正常撤权接口回收。
 
 ### USER_GROUP / ABAC 发布与回滚
 

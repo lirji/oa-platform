@@ -8,6 +8,7 @@ import com.lrj.oa.org.api.dto.OrgSnapshotView;
 import com.lrj.oa.org.application.EmployeeService;
 import com.lrj.oa.org.application.command.OrgCommands;
 import com.lrj.oa.security.annotation.RequiresPerm;
+import com.lrj.oa.security.port.DataScopeAccessChecker;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -21,21 +22,26 @@ public class EmployeeController {
 
     private final EmployeeService employeeService;
     private final OrgQueryApi orgQuery;
+    private final DataScopeAccessChecker dataScope;
 
-    public EmployeeController(EmployeeService employeeService, OrgQueryApi orgQuery) {
+    public EmployeeController(EmployeeService employeeService, OrgQueryApi orgQuery,
+                              DataScopeAccessChecker dataScope) {
         this.employeeService = employeeService;
         this.orgQuery = orgQuery;
+        this.dataScope = dataScope;
     }
 
     @GetMapping("/by-user/{userId}")
     @RequiresPerm("oa:employee:view")
     public Result<EmployeeView> byUser(@PathVariable String userId) {
-        return Result.ok(orgQuery.getEmployeeByUserId(userId));
+        EmployeeView employee = requireView(userId, "oa:employee:view");
+        return Result.ok(employee);
     }
 
     @GetMapping("/by-user/{userId}/assignments")
     @RequiresPerm("oa:employee:view")
     public Result<List<AssignmentView>> assignments(@PathVariable String userId) {
+        requireView(userId, "oa:employee:view");
         return Result.ok(orgQuery.activeAssignments(userId));
     }
 
@@ -46,13 +52,16 @@ public class EmployeeController {
     @RequiresPerm("oa:employee:view")
     public Result<OrgSnapshotView> asOf(@PathVariable String userId,
                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return Result.ok(orgQuery.asOf(userId, date));
+        OrgSnapshotView snapshot = orgQuery.asOf(userId, date);
+        dataScope.require("oa:employee:view", snapshot.primaryOrgId(), snapshot.primaryOrgPath(), userId);
+        return Result.ok(snapshot);
     }
 
     @GetMapping("/by-user/{userId}/manager-chain")
     @RequiresPerm("oa:employee:view")
     public Result<List<String>> managerChain(@PathVariable String userId,
                                              @RequestParam(defaultValue = "5") int maxLevel) {
+        requireView(userId, "oa:employee:view");
         return Result.ok(orgQuery.managerChain(userId, maxLevel));
     }
 
@@ -108,5 +117,11 @@ public class EmployeeController {
                               @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate leaveDate) {
         employeeService.leave(employeeId, leaveDate);
         return Result.ok();
+    }
+
+    private EmployeeView requireView(String userId, String permission) {
+        EmployeeView employee = orgQuery.getEmployeeByUserId(userId);
+        dataScope.require(permission, employee.primaryOrgId(), employee.primaryOrgPath(), employee.userId());
+        return employee;
     }
 }

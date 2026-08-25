@@ -24,7 +24,9 @@ import org.springframework.stereotype.Component;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -97,11 +99,18 @@ public class RequiresPermAspect {
             throw BusinessException.of(ResultCode.PERM_DENIED, "需要权限: " + String.join(", ", codes));
         }
 
+        Map<String, com.lrj.oa.security.model.DataScopeRule> effectiveScopes = new LinkedHashMap<>();
         if (abac.enabled()) {
             var snapshot = engine.snapshot(ctx.userId());
-            satisfied = satisfied.stream()
-                    .filter(code -> abac.allowed(snapshot, code, method, jp.getArgs(), ctx))
-                    .toList();
+            List<String> attributeSatisfied = new java.util.ArrayList<>();
+            for (String code : satisfied) {
+                var decision = abac.decide(snapshot, code, method, jp.getArgs(), ctx);
+                if (!decision.allowed()) continue;
+                attributeSatisfied.add(code);
+                effectiveScopes.put(code, snapshot.scopeOfPermissionRoles(
+                        catalog.idOf(code), decision.roleIds()));
+            }
+            satisfied = List.copyOf(attributeSatisfied);
             boolean attributesOk = ann.logical() == RequiresPerm.Logical.AND
                     ? satisfied.size() == codes.size() : !satisfied.isEmpty();
             if (!attributesOk) {
@@ -123,7 +132,7 @@ public class RequiresPermAspect {
                     ctx.userId(), codes, jp.getSignature().toShortString());
         }
 
-        AuthorizationContext.push(Set.copyOf(satisfied));
+        AuthorizationContext.push(Set.copyOf(satisfied), effectiveScopes);
         try {
             return jp.proceed();
         } finally {

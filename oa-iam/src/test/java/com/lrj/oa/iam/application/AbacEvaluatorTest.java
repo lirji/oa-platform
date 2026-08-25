@@ -4,6 +4,8 @@ import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.iam.domain.AbacBranch;
 import com.lrj.oa.iam.domain.PermissionSnapshot;
 import com.lrj.oa.security.context.UserContext;
+import com.lrj.oa.security.model.DataScopeRule;
+import com.lrj.oa.security.model.DataScopeType;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -50,10 +52,29 @@ class AbacEvaluatorTest {
     @Test
     void unconditionalAuthorizationSourceBypassesConditionalSources() {
         PermissionSnapshot snapshot = PermissionSnapshot.builder("u1").abacEnabled(true)
-                .addPerm(9, "oa:test").markAbacUnconditional(9)
+                .addPerm(9, "oa:test").markAbacUnconditional(9, 3)
                 .addAbacBranch(9, branch(1, condition(1, "false"))).build();
         assertThat(evaluator.allowed(snapshot, "oa:test", method,
                 new Object[]{new Request(BigDecimal.TEN)}, user)).isTrue();
+    }
+
+    @Test
+    void decisionReturnsOnlyPassingRolesSoTheirScopesCanBeMerged() {
+        PermissionSnapshot snapshot = PermissionSnapshot.builder("u1").abacEnabled(true)
+                .addPerm(9, "oa:test")
+                .scope(1, 9, "test", new DataScopeRule(DataScopeType.CUSTOM,
+                        List.of("/1/10/"), java.util.Set.of(10L), "u1"))
+                .scope(2, 9, "test", new DataScopeRule(DataScopeType.CUSTOM,
+                        List.of("/1/20/"), java.util.Set.of(20L), "u1"))
+                .addAbacBranch(9, branch(1, condition(11, "#user.primaryOrgId == 10")))
+                .addAbacBranch(9, branch(2, condition(12, "#user.primaryOrgId == 20")))
+                .build();
+
+        var decision = evaluator.decide(snapshot, "oa:test", method,
+                new Object[]{new Request(BigDecimal.ONE)}, user);
+        assertThat(decision.allowed()).isTrue();
+        assertThat(decision.roleIds()).containsExactly(1L);
+        assertThat(snapshot.scopeOfPermissionRoles(9, decision.roleIds()).orgIds()).containsExactly(10L);
     }
 
     @Test

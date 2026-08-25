@@ -62,7 +62,8 @@ public class BootstrapAdminInitializer implements ApplicationRunner {
             return;
         }
 
-        boolean already = grantMapper.selectBySubject(SubjectType.USER.name(), bootstrapUserId).stream()
+        boolean already = grantMapper.selectBySubject(TenantContext.DEFAULT_TENANT_ID,
+                        SubjectType.USER.name(), bootstrapUserId).stream()
                 .anyMatch(g -> superAdmin.getId().equals(g.getRoleId()));
         if (already) {
             log.info("初始管理员 {} 已持有 SUPER_ADMIN，无需引导", bootstrapUserId);

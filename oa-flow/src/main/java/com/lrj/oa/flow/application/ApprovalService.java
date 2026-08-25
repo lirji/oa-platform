@@ -10,13 +10,13 @@ import com.lrj.oa.flow.infrastructure.mapper.OutboxMapper;
 import com.lrj.oa.flow.infrastructure.mapper.TodoMapper;
 import com.lrj.oa.flow.infrastructure.workflow.LocalWorkflowGateway;
 import com.lrj.oa.flow.infrastructure.workflow.WorkflowGateway;
+import com.lrj.oa.iam.application.DelegationAuthorizationService;
 import com.lrj.oa.security.context.UserContext;
 import com.lrj.oa.security.context.UserContextHolder;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,7 +48,7 @@ public class ApprovalService {
     private final WorkflowGateway gateway;
     private final ObjectProvider<LocalWorkflowGateway> localGateway;
     private final ObjectMapper json;
-    private final JdbcTemplate jdbc;
+    private final DelegationAuthorizationService delegations;
 
     /** 业务侧的完成回调，按 bizType 注册（请假、报销…各自处理自己的后置动作）。 */
     private final Map<String, BiConsumer<String, String>> finishHandlers = new HashMap<>();
@@ -58,7 +58,8 @@ public class ApprovalService {
                            OutboxMapper outboxMapper, TodoMapper todoMapper,
                            WorkflowGateway gateway,
                            ObjectProvider<LocalWorkflowGateway> localGateway,
-                           ObjectMapper json, JdbcTemplate jdbc) {
+                           ObjectMapper json,
+                           DelegationAuthorizationService delegations) {
         this.instanceMapper = instanceMapper;
         this.templateMapper = templateMapper;
         this.outboxMapper = outboxMapper;
@@ -66,7 +67,7 @@ public class ApprovalService {
         this.gateway = gateway;
         this.localGateway = localGateway;
         this.json = json;
-        this.jdbc = jdbc;
+        this.delegations = delegations;
     }
 
     @PostConstruct
@@ -98,7 +99,7 @@ public class ApprovalService {
         if (ctx.primaryOrgId() == null) {
             throw BusinessException.of(ResultCode.FLOW_START_FAILED, "申请人没有主岗组织，无法确定单据归属");
         }
-        if (instanceMapper.selectByBusiness(req.bizType(), req.businessKey()) != null) {
+        if (instanceMapper.selectByBusiness(TenantContext.get(), req.bizType(), req.businessKey()) != null) {
             throw BusinessException.of(ResultCode.CONFLICT, "该单据已发起过审批");
         }
         var template = templateMapper.selectLatestPublished(TenantContext.get(), req.formTemplateCode());
@@ -169,9 +170,14 @@ public class ApprovalService {
                 .filter(t -> t.taskId().equals(taskId)).findFirst()
                 .orElseThrow(() -> BusinessException.of(ResultCode.FLOW_TASK_NOT_FOUND, "待办不存在: " + taskId));
 
-        String effectiveActor = onBehalfOf == null ? ctx.userId() : onBehalfOf;
-        if (!effectiveActor.equals(task.assignee())) {
-            throw BusinessException.of(ResultCode.PERM_DENIED, "该待办不属于你");
+        if (onBehalfOf == null) {
+            if (!ctx.userId().equals(task.assignee())) {
+                throw BusinessException.of(ResultCode.PERM_DENIED, "该待办不属于你");
+            }
+        } else if (!onBehalfOf.equals(task.assignee())
+                || !delegations.canActOnBehalf(ctx.userId(), onBehalfOf,
+                task.processDefinitionKey(), task.candidateGroup())) {
+            throw BusinessException.of(ResultCode.DELEGATION_INVALID, "委托关系不存在、已失效或不覆盖该流程");
         }
 
         gateway.completeTask(taskId, outcome, ctx.userId(), onBehalfOf, comment, Map.of());
@@ -185,11 +191,8 @@ public class ApprovalService {
 
         ApprovalInstance ins = instanceMapper.selectByProcessInstance(task.processInstanceId());
         if (ins != null) {
-            jdbc.update("""
-                    INSERT INTO oa_flow.approval_node_log(instance_id, task_id, node_name, actor_user_id,
-                                                          on_behalf_of, action, comment)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, ins.getId(), taskId, task.name(), ctx.userId(), onBehalfOf, outcome, comment);
+            instanceMapper.insertNodeLog(ins.getId(), taskId, task.name(), ctx.userId(),
+                    onBehalfOf, outcome, comment);
         }
         log.info("办理待办 taskId={} outcome={} actor={} onBehalfOf={}", taskId, outcome, ctx.userId(), onBehalfOf);
     }
@@ -245,11 +248,7 @@ public class ApprovalService {
         ApprovalInstance ins = instanceMapper.selectByProcessInstance(processInstanceId);
         if (ins == null) return;
         todoMapper.cancelByProcess(processInstanceId);
-        jdbc.update("""
-                UPDATE oa_flow.approval_instance
-                   SET status = 'FINISHED', outcome = ?, finished_at = now()
-                 WHERE id = ? AND status <> 'FINISHED'
-                """, outcome, ins.getId());
+        instanceMapper.finish(ins.getId(), outcome);
         var handler = finishHandlers.get(ins.getBizType());
         if (handler != null) handler.accept(ins.getBusinessKey(), outcome);
         log.info("审批结束 bizType={} businessKey={} outcome={}", ins.getBizType(), ins.getBusinessKey(), outcome);
@@ -302,16 +301,12 @@ public class ApprovalService {
 
     /** 末环节动作决定整单结论：任一环节 REJECT 即驳回（BPMN 的 completionCondition 也是这么写的）。 */
     private String lastOutcomeOf(Long instanceId) {
-        List<String> actions = jdbc.queryForList("""
-                SELECT action FROM oa_flow.approval_node_log
-                 WHERE instance_id = ? ORDER BY id DESC LIMIT 1
-                """, String.class, instanceId);
-        String last = actions.isEmpty() ? null : actions.get(0);
+        String last = instanceMapper.lastAction(instanceId);
         return "REJECT".equalsIgnoreCase(last) ? "REJECTED" : "APPROVED";
     }
 
     public ApprovalInstance findByBusiness(String bizType, String businessKey) {
-        return instanceMapper.selectByBusiness(bizType, businessKey);
+        return instanceMapper.selectByBusiness(TenantContext.get(), bizType, businessKey);
     }
 
     // ───────────────────────────────────────────── 内部

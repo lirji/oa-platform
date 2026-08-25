@@ -35,6 +35,14 @@ public class GrantRecord {
     public SubjectType subjectTypeEnum() { return SubjectType.valueOf(subjectType); }
     public GrantType grantTypeEnum() { return GrantType.valueOf(grantType); }
 
+    /**
+     * JIT 记录只是一枚临时“激活标记”，不得再次贡献角色、ABAC 或数据范围。
+     * 普通定时授权虽然同为 TEMPORARY，仍然是一条真实授权，不能混为一谈。
+     */
+    public boolean jitElevation() {
+        return grantTypeEnum() == GrantType.TEMPORARY && "APPROVAL".equals(source);
+    }
+
     /** 在给定时刻是否有效：未撤销 且 落在 [validFrom, validTo) 内。 */
     public boolean activeAt(OffsetDateTime t) {
         if (revokedAt != null) return false;

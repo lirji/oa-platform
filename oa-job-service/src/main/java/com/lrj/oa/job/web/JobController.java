@@ -4,6 +4,7 @@ import com.lrj.oa.common.api.Result;
 import com.lrj.oa.job.application.OaJobs;
 import com.lrj.oa.security.annotation.PublicApi;
 import com.lrj.oa.security.annotation.RequiresPerm;
+import com.lrj.oa.security.annotation.ObjectScope;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -54,6 +55,8 @@ public class JobController {
 
     @GetMapping("/runs")
     @RequiresPerm("oa:job:run")
+    @ObjectScope(permission = "oa:job:run", tables = "oa_sys.job_run",
+            strategy = ObjectScope.Strategy.RESOURCE, reason = "跑批管理员共享的执行台账")
     public Result<List<Map<String, Object>>> runs(@RequestParam(defaultValue = "20") int limit) {
         return Result.ok(jdbc.queryForList("""
                 SELECT job_name, shard, shard_total, idem_key, status, affected, error,

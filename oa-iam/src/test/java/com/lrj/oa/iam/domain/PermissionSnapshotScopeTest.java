@@ -42,4 +42,23 @@ class PermissionSnapshotScopeTest {
         assertThat(snapshot.scopeOfPermission(7).pathPrefixes()).containsExactlyInAnyOrder("/1/2/", "/1/5/");
         assertThat(snapshot.scopeOfPermission(7).orgIds()).containsExactlyInAnyOrder(2L, 5L);
     }
+
+    @Test
+    void mixedScopeTypesAreUnionedInsteadOfDroppingTheNarrowerGrant() {
+        DataScopeRule result = PermissionSnapshot.widen(
+                new DataScopeRule(DataScopeType.SELF, List.of(), Set.of(), "u1"),
+                new DataScopeRule(DataScopeType.ORG_AND_SUB, List.of("/1/2/"), Set.of(2L), "u1"));
+
+        assertThat(result.type()).isEqualTo(DataScopeType.CUSTOM);
+        assertThat(result.pathPrefixes()).containsExactly("/1/2/");
+        assertThat(result.orgIds()).containsExactly(2L);
+        assertThat(result.selfUserId()).isEqualTo("u1");
+    }
+
+    @Test
+    void allAndNoneRemainAbsorbingAndIdentityElements() {
+        DataScopeRule org = new DataScopeRule(DataScopeType.ORG, List.of(), Set.of(2L), "u1");
+        assertThat(PermissionSnapshot.widen(DataScopeRule.none(), org)).isEqualTo(org);
+        assertThat(PermissionSnapshot.widen(org, DataScopeRule.all()).type()).isEqualTo(DataScopeType.ALL);
+    }
 }

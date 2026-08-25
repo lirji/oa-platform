@@ -49,8 +49,10 @@ public class OrgChangeListener {
         String userId = event.userId();
         if (event.left()) {
             int revoked = 0;
-            for (var g : grantMapper.selectBySubject("USER", userId)) {
-                revoked += grantMapper.revoke(g.getId(), "system", "员工离职自动回收");
+            long tenantId = com.lrj.oa.common.context.TenantContext.get();
+            for (var g : grantMapper.selectBySubject(tenantId, "USER", userId)) {
+                revoked += grantMapper.revoke(tenantId,
+                        g.getId(), "system", "员工离职自动回收");
             }
             versionMapper.bumpEpoch();
             engine.evictAllLocal();
@@ -58,10 +60,12 @@ public class OrgChangeListener {
             log.warn("员工 {} 离职，已撤销其 {} 条授权", userId, revoked);
             return;
         }
-        versionMapper.bumpUserVersion(userId);
-        engine.evictLocal(userId);
-        if (bus != null) bus.publish(CacheInvalidation.TYPE_PERM_USER, userId);
-        log.info("任职变更（{}）作废了 {} 的权限快照", event.reason(), userId);
+        // 任职变化既可能加权也可能收权；Pub/Sub 丢失时仅 bump userVersion 无法让热路径发现。
+        // 统一推进全局 epoch，保证调岗/关闭兼岗带来的范围收缩在 1 秒内可靠生效。
+        versionMapper.bumpEpoch();
+        engine.evictAllLocal();
+        if (bus != null) bus.publish(CacheInvalidation.TYPE_PERM_EPOCH, "");
+        log.info("任职变更（{}）推进全局权限纪元，可靠作废 {} 的旧范围", event.reason(), userId);
     }
 
     @TransactionalEventListener(fallbackExecution = true)

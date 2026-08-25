@@ -1,6 +1,7 @@
 package com.lrj.oa.report.application;
 
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.lrj.oa.report.infrastructure.mapper.DashboardMapper;
+import com.lrj.oa.security.annotation.DataScope;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,39 +21,33 @@ import java.util.Map;
 @Service
 public class DashboardService {
 
-    private final JdbcTemplate jdbc;
+    private final DashboardMapper mapper;
 
-    public DashboardService(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    public DashboardService(DashboardMapper mapper) { this.mapper = mapper; }
 
     /** 编制人效。orgPathPrefix 非空时只看那棵子树（前缀匹配，不展开 id 列表）。 */
+    @DataScope(permission = "oa:report:view", table = "oa_sys.v_headcount", alias = "h",
+            module = "report", userColumn = "org_path")
     public List<Map<String, Object>> headcount(String orgPathPrefix, int limit) {
-        if (orgPathPrefix != null && !orgPathPrefix.isBlank()) {
-            return jdbc.queryForList("SELECT * FROM oa_sys.v_headcount WHERE org_path LIKE ?"
-                    + " ORDER BY headcount DESC LIMIT ?", orgPathPrefix + "%", cap(limit));
-        }
-        return jdbc.queryForList("SELECT * FROM oa_sys.v_headcount ORDER BY headcount DESC LIMIT ?", cap(limit));
+        return mapper.headcount(orgPathPrefix == null || orgPathPrefix.isBlank() ? null : orgPathPrefix, cap(limit));
     }
 
+    @DataScope(permission = "oa:report:view", table = "oa_sys.v_approval_efficiency_scoped", alias = "a",
+            module = "report", userColumn = "applicant_user_id")
     public List<Map<String, Object>> approvalEfficiency() {
-        return jdbc.queryForList("SELECT * FROM oa_sys.v_approval_efficiency ORDER BY total DESC");
+        return mapper.approvalEfficiency();
     }
 
+    @DataScope(permission = "oa:report:view", table = "oa_sys.v_attendance_summary_scoped", alias = "a",
+            module = "report", userColumn = "user_id")
     public List<Map<String, Object>> attendanceSummary(int days) {
-        return jdbc.queryForList("SELECT * FROM oa_sys.v_attendance_summary"
-                + " WHERE work_date >= current_date - ?::int ORDER BY work_date DESC", Math.max(days, 1));
+        return mapper.attendanceSummary(Math.max(days, 1));
     }
 
+    @DataScope(permission = "oa:report:view", table = "oa_sys.v_asset_summary_scoped", alias = "a",
+            module = "report", userColumn = "holder_id")
     public List<Map<String, Object>> assetSummary() {
-        return jdbc.queryForList("SELECT * FROM oa_sys.v_asset_summary ORDER BY category, status");
-    }
-
-    /** 一屏概览：驾驶舱首屏要的几个数字，一次查完，避免前端发六个请求。 */
-    public Map<String, Object> overview() {
-        return Map.of(
-                "headcountTop", headcount(null, 5),
-                "approval", approvalEfficiency(),
-                "attendance", attendanceSummary(7),
-                "asset", assetSummary());
+        return mapper.assetSummary();
     }
 
     private static int cap(int n) { return Math.min(Math.max(n, 1), 200); }

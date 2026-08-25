@@ -16,7 +16,14 @@ public class GovernedTableRegistry {
 
     private static final Set<String> TABLES = Set.of(
             "oa_org.v_employee_directory",
-            "oa_admin.asset"
+            "oa_admin.asset",
+            "oa_admin.room_booking",
+            "oa_admin.visitor",
+            "oa_doc.official_doc",
+            "oa_sys.v_headcount",
+            "oa_sys.v_approval_efficiency_scoped",
+            "oa_sys.v_attendance_summary_scoped",
+            "oa_sys.v_asset_summary_scoped"
     );
 
     public boolean contains(String table) {

@@ -54,9 +54,82 @@ ABAC 策略的挂载维度是：
 
 ABAC 当前控制的是一次接口方法调用是否允许，不是字段级脱敏，也不会直接生成 SQL 行过滤条件。
 RBAC/ABAC 实际通过的权限点会进入本次授权上下文；`@DataScope(permission=...)` 只能引用其中的权限点，
-再读取该权限点自身的 `ALL`、`ORG_AND_SUB`、`ORG`、`SELF`、`CUSTOM`、`NONE` 范围生成 SQL。
+再读取**本次通过 ABAC 的来源角色**为该权限点贡献的 `ALL`、`ORG_AND_SUB`、`ORG`、`SELF`、
+`CUSTOM`、`NONE` 范围生成 SQL。未通过条件的角色来源即使携带 `ALL` 也不会进入范围合并。
 同模块其他权限的 `ALL` 不会放宽当前权限。平台严格协议和剩余模块迁移见
 [接口权限与数据权限全局保障方案](plans/data-permission-global-guard/FINAL_PLAN.md)。
+
+### 2.1 RBAC 与 ABAC 的角色边界
+
+ABAC 不参与角色分配，也不会让“满足属性条件”的用户凭空获得角色。系统先用 RBAC 找出用户当前
+适用的授权记录和角色，再用 ABAC 收窄这些角色已经提供的权限。角色集成链路是：
+
+```text
+USER / ORG_UNIT / POSITION / USER_GROUP
+  -> grant_record
+  -> ACTIVE 的被授予角色
+  -> role_inherit 角色继承闭包
+  -> role_permission 权限点
+  -> permission_condition(被授予角色, 权限点)
+```
+
+角色继承展开后，权限会重新归到“被授予的根角色”上，ABAC 条件也按这个根角色匹配，而不是按
+权限最初定义所在的后代角色匹配。例如 `SUPER_ADMIN` 继承 `HR_ADMIN` 的
+`oa:employee:export`：
+
+- `(HR_ADMIN, oa:employee:export)` 条件约束直接通过 `HR_ADMIN` 获得权限的来源；
+- 要约束通过 `SUPER_ADMIN` 继承该权限的来源，必须配置
+  `(SUPER_ADMIN, oa:employee:export)` 条件；
+- 只配置前者，不会自动把同一条件传播给 `SUPER_ADMIN` 来源。
+
+同一个角色无论通过用户、组织、岗位还是用户组授予，都使用该角色对应的同一组 ABAC 条件。
+表达式上下文不暴露授权主体类型、授权记录、授权理由或授权范围，因此不能根据“角色来自哪个组/部门”
+编写不同条件。
+
+角色状态在权限展开入口和继承闭包中同时生效：被授予的根角色只有处于 `ACTIVE` 时才提供权限和
+ABAC 分支，闭包重建也只保留两端均为 `ACTIVE` 的继承路径。停用任一角色都会重建闭包、推进全局
+权限纪元并使已有快照失效，因此它既不再作为直接授权来源，也不再向上层角色传播权限。停用不会删除
+直接继承边或 ABAC 条件；重新启用并重建闭包后，原有关系和条件可以再次参与计算。
+
+### 2.2 权限快照中的角色条件
+
+权限快照重算时，系统先收集用户的全部适用角色和这些角色直接或继承得到的权限，再一次性读取
+这些根角色下所有 `enabled=true` 且未软删除的条件，并按 `(roleId, permissionId)` 分组：
+
+- 找到条件：写入一个以角色为单位的 `AbacBranch`；
+- 没有条件：把该权限标记为存在无条件授权来源；
+- 同一角色通过多条授权记录生效：复用同一个角色条件分支；只有该角色分支通过时，才合并其授权记录范围。
+
+快照同时保存 RBAC 权限位图、无条件来源位图和角色条件分支，并写入 L1 Caffeine/L2 Redis。接口请求
+只读取快照和方法参数，不再查询角色、授权或 ABAC 条件表。
+
+### 2.3 请求判定顺序
+
+一次带 `@RequiresPerm` 的请求按以下顺序执行：
+
+```text
+身份认证
+  -> RBAC 权限位图
+  -> ABAC 角色条件分支
+  -> 高危权限的 JIT 临时提权
+  -> AuthorizationContext
+  -> 业务方法 / DataScope
+```
+
+对单个权限点 `P`，ABAC 开启时可以简化为：
+
+```text
+allow(P)
+  = RBAC_HAS(P)
+    AND (HAS_UNCONDITIONAL_SOURCE(P)
+         OR OR_over_roles(AND_over_conditions(condition)))
+    AND JIT_IF_REQUIRED(P)
+```
+
+ABAC 总开关关闭时，中间的角色条件部分视为通过，保持原有 RBAC 行为。对于声明多个权限点的
+`@RequiresPerm`，`Logical.AND` 要求所有权限点分别通过 RBAC/ABAC，`Logical.OR` 则至少需要一个
+权限点同时通过 RBAC 和 ABAC。真正通过的权限点及其通过的来源角色会写入
+`AuthorizationContext`，供后续数据权限绑定。
 
 ## 3. 可用属性
 
@@ -112,6 +185,19 @@ RBAC/ABAC 实际通过的权限点会进入本次授权上下文；`@DataScope(p
 4. 一个表达式内部可自行使用 `and`、`or`、`not` 组合。
 5. 未知权限点、缺少条件分支、变量/属性不存在或求值异常均按拒绝处理（fail-closed）。
 6. 同一“角色 + 权限点”最多配置 32 条未删除条件。
+
+例如用户同时通过两个角色获得 `oa:expense:approve`：
+
+```text
+DEPT_MANAGER: amount <= 5000 AND orgId == user.primaryOrgId
+HR_ADMIN:     amount <= 20000
+
+最终条件：
+(amount <= 5000 AND orgId == user.primaryOrgId) OR amount <= 20000
+```
+
+如果该用户还通过第三个适用角色无条件获得同一权限，则无条件来源优先，以上两个条件分支不会阻止
+本次调用。若业务要求所有来源都必须满足统一约束，应确保每个能够提供该权限的根角色都配置了条件。
 
 因为策略绑定权限点，而一个权限点可能被多个接口共同使用，编辑前必须检查这些接口的方法参数形状。
 例如条件使用 `#p0.amount`，但另一个使用相同权限点的方法第一个参数没有 `amount`，该接口求值会出错并被拒绝。

@@ -16,6 +16,7 @@ public class DataScopeMetrics {
     private final Counter missing;
     private final Counter aliasMismatch;
     private final Counter bypass;
+    private final Counter objectGuarded;
 
     @Autowired
     public DataScopeMetrics(ObjectProvider<MeterRegistry> meters) {
@@ -29,6 +30,7 @@ public class DataScopeMetrics {
         missing = counter(registry, "oa_data_scope_missing_total");
         aliasMismatch = counter(registry, "oa_data_scope_alias_mismatch_total");
         bypass = counter(registry, "oa_data_scope_bypass_total");
+        objectGuarded = counter(registry, "oa_data_scope_object_guarded_total");
     }
 
     /** 仅供不启动 Spring 的 SQL 单元测试使用。 */
@@ -43,6 +45,7 @@ public class DataScopeMetrics {
     public void missing() { increment(missing); }
     public void aliasMismatch() { increment(aliasMismatch); }
     public void bypass() { increment(bypass); }
+    public void objectGuarded() { increment(objectGuarded); }
 
     private static Counter counter(MeterRegistry registry, String name) {
         return registry == null ? null : registry.counter(name);

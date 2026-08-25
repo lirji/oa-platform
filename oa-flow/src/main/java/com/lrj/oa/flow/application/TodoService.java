@@ -4,7 +4,8 @@ import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.flow.api.dto.TodoView;
 import com.lrj.oa.flow.infrastructure.mapper.TodoMapper;
 import com.lrj.oa.flow.infrastructure.workflow.WorkflowGateway;
-import com.lrj.oa.security.port.PermissionChecker;
+import com.lrj.oa.iam.api.DelegationRule;
+import com.lrj.oa.iam.application.DelegationAuthorizationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -31,28 +32,37 @@ public class TodoService {
 
     private final TodoMapper todoMapper;
     private final WorkflowGateway gateway;
-    private final PermissionChecker permissions;
+    private final DelegationAuthorizationService delegations;
     private final ApprovalService approvalService;
 
     public TodoService(TodoMapper todoMapper, WorkflowGateway gateway,
-                       PermissionChecker permissions, ApprovalService approvalService) {
+                       DelegationAuthorizationService delegations, ApprovalService approvalService) {
         this.todoMapper = todoMapper;
         this.gateway = gateway;
-        this.permissions = permissions;
+        this.delegations = delegations;
         this.approvalService = approvalService;
     }
 
     /** 我的待办 = 指派给我的 ∪ 指派给我代理的人的。 */
     public List<TodoView> myTodos(String userId, int limit) {
-        return todoMapper.selectPending(assigneesFor(userId), Math.min(limit, 200));
+        List<DelegationRule> rules = delegations.activeRules(userId);
+        Set<String> assignees = new LinkedHashSet<>();
+        assignees.add(userId);
+        rules.forEach(r -> assignees.add(r.delegatorUserId()));
+        return todoMapper.selectPending(TenantContext.get(), assignees, 200).stream()
+                .filter(t -> userId.equals(t.getAssigneeUserId()) || rules.stream().anyMatch(r ->
+                        r.delegatorUserId().equals(t.getAssigneeUserId())
+                                && r.matches(t.getProcessDefinitionKey(), t.getCandidateGroup())))
+                .limit(Math.min(Math.max(limit, 1), 200))
+                .toList();
     }
 
-    public long myPendingCount(String userId) { return todoMapper.countPending(userId); }
+    public long myPendingCount(String userId) { return myTodos(userId, 200).size(); }
 
     public Set<String> assigneesFor(String userId) {
         Set<String> all = new LinkedHashSet<>();
         all.add(userId);
-        all.addAll(permissions.delegators(userId));   // 我正在代理谁
+        delegations.activeRules(userId).forEach(r -> all.add(r.delegatorUserId()));
         return all;
     }
 

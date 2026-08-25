@@ -12,12 +12,22 @@ set -a
 set +a
 
 TAG="${OA_IMAGE_TAG:-local}"
+RUN_TESTS="${OA_BUILD_RUN_TESTS:-false}"
+
+DOCKER_FLAGS=()
+[ "${OA_DOCKER_PULL:-false}" = "true" ] && DOCKER_FLAGS+=(--pull)
+[ "${OA_DOCKER_NO_CACHE:-false}" = "true" ] && DOCKER_FLAGS+=(--no-cache)
 
 export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 21)}"
 export PATH="/Users/liruijun/personal/devUtils/apache-maven-3.9.12/bin:$PATH"
 
-echo "── 1/4 构建 jar（system mvn，跳过测试；要跑测试请单独执行 mvn test）"
-mvn -B -q -f "$ROOT/pom.xml" clean package -DskipTests
+if [ "$RUN_TESTS" = "true" ]; then
+  echo "── 1/4 冷构建 jar 并执行全仓测试"
+  mvn -B -q -f "$ROOT/pom.xml" clean package
+else
+  echo "── 1/4 构建 jar（system mvn，跳过测试；OA_BUILD_RUN_TESTS=true 可执行完整门禁）"
+  mvn -B -q -f "$ROOT/pom.xml" clean package -DskipTests
+fi
 
 echo "── 2/4 构建后端镜像 tag=${TAG}"
 build() {  # $1=service  $2=port
@@ -27,6 +37,7 @@ build() {  # $1=service  $2=port
   jar="${jar#"$ROOT/"}"
   echo "   · $svc  <- $jar"
   docker build -q \
+    "${DOCKER_FLAGS[@]}" \
     -f "$ROOT/deploy/Dockerfile" \
     --build-arg "SERVICE=$svc" \
     --build-arg "JAR_FILE=$jar" \
@@ -43,6 +54,7 @@ build oa-job-service    8403
 if [ "${OA_BUILD_CONSOLE:-true}" = "true" ]; then
   echo "── 3/4 构建 PC 控制台镜像"
   docker build -q \
+    "${DOCKER_FLAGS[@]}" \
     -f "$ROOT/oa-console/Dockerfile" \
     --build-arg "FRONTEND_OIDC_ENABLED=${VITE_AUTH_ENABLED:-false}" \
     --build-arg "VITE_CASDOOR_AUTHORITY=${VITE_CASDOOR_AUTHORITY:-http://localhost:8000}" \
@@ -58,6 +70,7 @@ fi
 if [ "${OA_BUILD_MOBILE:-true}" = "true" ]; then
   echo "── 4/4 构建移动端镜像"
   docker build -q \
+    "${DOCKER_FLAGS[@]}" \
     -f "$ROOT/oa-mobile/Dockerfile" \
     --build-arg "FRONTEND_OIDC_ENABLED=${VITE_AUTH_ENABLED:-false}" \
     --build-arg "VITE_CASDOOR_AUTHORITY=${VITE_CASDOOR_AUTHORITY:-http://localhost:8000}" \

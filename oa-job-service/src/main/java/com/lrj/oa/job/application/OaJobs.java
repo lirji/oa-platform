@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -126,24 +127,93 @@ public class OaJobs {
         });
     }
 
-    /** 为未来 monthsAhead 个月建分区。返回新建数量。 */
+    /**
+     * 为未来 monthsAhead 个月建分区。返回新建数量。
+     *
+     * <p>PostgreSQL 创建分区时不会继承父表和父字段的 COMMENT，所以无论分区是本次新建
+     * 还是已经存在，都同步一次数据字典注释。这样新增月份不会重新变成“无注释表”。
+     */
     public long ensureMonthlyPartitions(String schema, String table, String col, int monthsAhead) {
+        String safeSchema = requireIdentifier(schema, "schema");
+        String safeTable = requireIdentifier(table, "table");
+        requireIdentifier(col, "partition column");
         long created = 0;
         for (int i = 1; i <= monthsAhead; i++) {
             LocalDate from = LocalDate.now().withDayOfMonth(1).plusMonths(i);
             LocalDate to = from.plusMonths(1);
             String suffix = "%d%02d".formatted(from.getYear(), from.getMonthValue());
-            String part = "%s.%s_%s".formatted(schema, table, suffix);
+            String partitionTable = safeTable + "_" + suffix;
+            String part = qualifiedName(safeSchema, partitionTable);
             Integer exists = jdbc.queryForObject(
                     "SELECT count(*) FROM pg_tables WHERE schemaname = ? AND tablename = ?",
-                    Integer.class, schema, table + "_" + suffix);
-            if (exists != null && exists > 0) continue;
-            jdbc.execute("CREATE TABLE IF NOT EXISTS %s PARTITION OF %s.%s FOR VALUES FROM ('%s') TO ('%s')"
-                    .formatted(part, schema, table, from, to));
-            created++;
+                    Integer.class, safeSchema, partitionTable);
+            if (exists == null || exists == 0) {
+                jdbc.execute("CREATE TABLE IF NOT EXISTS %s PARTITION OF %s FOR VALUES FROM ('%s') TO ('%s')"
+                        .formatted(part, qualifiedName(safeSchema, safeTable), from, to));
+                created++;
+            }
+            copyTableComments(safeSchema, safeTable, partitionTable);
         }
         return created;
     }
+
+    private void copyTableComments(String schema, String parentTable, String childTable) {
+        String parentRegclass = schema + "." + parentTable;
+        String childRegclass = schema + "." + childTable;
+        String childQualifiedName = qualifiedName(schema, childTable);
+
+        String tableComment = jdbc.queryForObject(
+                "SELECT obj_description(to_regclass(?), 'pg_class')",
+                String.class, parentRegclass);
+        if (tableComment != null && !tableComment.isBlank()) {
+            jdbc.execute("COMMENT ON TABLE %s IS %s".formatted(
+                    childQualifiedName,
+                    sqlLiteral(tableComment + "；物理分区，数据范围由分区约束决定")));
+        }
+
+        List<ColumnComment> columnComments = jdbc.query("""
+                SELECT child_attr.attname,
+                       col_description(parent_attr.attrelid, parent_attr.attnum)
+                  FROM pg_attribute parent_attr
+                  JOIN pg_attribute child_attr
+                    ON child_attr.attrelid = to_regclass(?)
+                   AND child_attr.attname = parent_attr.attname
+                   AND child_attr.attnum > 0
+                   AND NOT child_attr.attisdropped
+                 WHERE parent_attr.attrelid = to_regclass(?)
+                   AND parent_attr.attnum > 0
+                   AND NOT parent_attr.attisdropped
+                   AND col_description(parent_attr.attrelid, parent_attr.attnum) IS NOT NULL
+                """, (rs, rowNum) -> new ColumnComment(rs.getString(1), rs.getString(2)),
+                childRegclass, parentRegclass);
+        for (ColumnComment comment : columnComments) {
+            jdbc.execute("COMMENT ON COLUMN %s.%s IS %s".formatted(
+                    childQualifiedName,
+                    quoteIdentifier(comment.column()),
+                    sqlLiteral(comment.comment())));
+        }
+    }
+
+    private static String qualifiedName(String schema, String table) {
+        return quoteIdentifier(schema) + "." + quoteIdentifier(table);
+    }
+
+    private static String quoteIdentifier(String identifier) {
+        return '"' + requireIdentifier(identifier, "PostgreSQL identifier") + '"';
+    }
+
+    private static String requireIdentifier(String identifier, String label) {
+        if (identifier == null || !identifier.matches("[a-z][a-z0-9_]*")) {
+            throw new IllegalArgumentException(label + " 不是安全的 PostgreSQL 标识符: " + identifier);
+        }
+        return identifier;
+    }
+
+    private static String sqlLiteral(String value) {
+        return "'" + value.replace("'", "''") + "'";
+    }
+
+    private record ColumnComment(String column, String comment) {}
 
     // ───────────────────────────── 假期额度年初批量发放（Phase 5 的已知边界）
     /**

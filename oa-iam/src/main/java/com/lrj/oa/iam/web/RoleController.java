@@ -1,7 +1,9 @@
 package com.lrj.oa.iam.web;
 
 import com.lrj.oa.common.api.Result;
+import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.security.annotation.RequiresPerm;
+import com.lrj.oa.security.annotation.ObjectScope;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,15 +44,17 @@ public class RoleController {
     /** 全部启用中的角色。授权页与提权对话框的下拉数据源。 */
     @GetMapping("/roles")
     @RequiresPerm("oa:iam:view")
+    @ObjectScope(permission = "oa:iam:view", tables = "oa_iam.role", strategy = ObjectScope.Strategy.RESOURCE,
+            reason = "启用角色目录是 IAM 管理员共享只读配置")
     public Result<List<RoleView>> roles() {
         List<RoleView> out = new ArrayList<>();
         jdbc.query("""
                 SELECT id, code, name, type, default_scope, builtin, remark
-                  FROM oa_iam.role WHERE status = 'ACTIVE' ORDER BY id
+                  FROM oa_iam.role WHERE tenant_id = ? AND status = 'ACTIVE' ORDER BY id
                 """, (RowCallbackHandler) rs -> out.add(new RoleView(
                         rs.getLong("id"), rs.getString("code"), rs.getString("name"),
                         rs.getString("type"), rs.getString("default_scope"),
-                        rs.getBoolean("builtin"), rs.getString("remark"))));
+                        rs.getBoolean("builtin"), rs.getString("remark"))), TenantContext.get());
         return Result.ok(out);
     }
 
@@ -61,6 +65,8 @@ public class RoleController {
      */
     @GetMapping("/roles/mine")
     @RequiresPerm("oa:iam:elevate")
+    @ObjectScope(permission = "oa:iam:elevate", tables = {"oa_iam.role", "oa_iam.grant_record"},
+            strategy = ObjectScope.Strategy.OWNER, reason = "查询固定当前用户的直接永久角色")
     public Result<List<RoleView>> myRoles() {
         String me = com.lrj.oa.security.context.UserContextHolder.require().userId();
         List<RoleView> out = new ArrayList<>();
@@ -68,7 +74,8 @@ public class RoleController {
                 SELECT DISTINCT r.id, r.code, r.name, r.type, r.default_scope, r.builtin, r.remark
                   FROM oa_iam.role r
                   JOIN oa_iam.grant_record g ON g.role_id = r.id
-                 WHERE g.subject_type = 'USER' AND g.subject_id = ?
+                 WHERE g.tenant_id = ? AND r.tenant_id = ?
+                   AND g.subject_type = 'USER' AND g.subject_id = ?
                    AND g.revoked_at IS NULL
                    AND (g.valid_to IS NULL OR g.valid_to > now())
                    AND r.status = 'ACTIVE'
@@ -76,7 +83,8 @@ public class RoleController {
                 """, (RowCallbackHandler) rs -> out.add(new RoleView(
                         rs.getLong("id"), rs.getString("code"), rs.getString("name"),
                         rs.getString("type"), rs.getString("default_scope"),
-                        rs.getBoolean("builtin"), rs.getString("remark"))), me);
+                        rs.getBoolean("builtin"), rs.getString("remark"))),
+                TenantContext.get(), TenantContext.get(), me);
         return Result.ok(out);
     }
 
@@ -86,6 +94,8 @@ public class RoleController {
      */
     @GetMapping("/permissions/catalog")
     @RequiresPerm("oa:iam:view")
+    @ObjectScope(permission = "oa:iam:view", tables = "oa_iam.permission", strategy = ObjectScope.Strategy.RESOURCE,
+            reason = "权限点目录是 IAM 管理员共享只读配置")
     public Result<List<PermissionView>> catalog() {
         List<PermissionView> out = new ArrayList<>();
         jdbc.query("""
@@ -119,6 +129,8 @@ public class RoleController {
      */
     @GetMapping("/elevations/mine")
     @RequiresPerm("oa:iam:elevate")
+    @ObjectScope(permission = "oa:iam:elevate", tables = {"oa_iam.grant_record", "oa_iam.role"},
+            strategy = ObjectScope.Strategy.OWNER, reason = "查询固定当前用户的活跃 JIT 记录")
     public Result<List<ElevationView>> myElevations() {
         String me = com.lrj.oa.security.context.UserContextHolder.require().userId();
         List<ElevationView> out = new ArrayList<>();
@@ -126,7 +138,8 @@ public class RoleController {
                 SELECT g.id, g.role_id, r.code AS role_code, r.name AS role_name,
                        g.granted_at, g.valid_to, g.reason
                   FROM oa_iam.grant_record g JOIN oa_iam.role r ON r.id = g.role_id
-                 WHERE g.subject_type = 'USER' AND g.subject_id = ?
+                 WHERE g.tenant_id = ? AND r.tenant_id = ?
+                   AND g.subject_type = 'USER' AND g.subject_id = ?
                    AND g.grant_type = 'TEMPORARY'
                    AND g.revoked_at IS NULL
                    AND g.valid_to > now()
@@ -139,7 +152,8 @@ public class RoleController {
                     rs.getString("role_code"), rs.getString("role_name"),
                     rs.getObject("granted_at", java.time.OffsetDateTime.class),
                     validTo, Math.max(remain, 0), rs.getString("reason")));
-        }, me);
+        }, com.lrj.oa.common.context.TenantContext.get(),
+                com.lrj.oa.common.context.TenantContext.get(), me);
         return Result.ok(out);
     }
 }

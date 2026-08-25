@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Update;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Collection;
 
 /** 通知域 Mapper。必须放在 {@code ..infrastructure.mapper} 包下（@MapperScan 只扫这个通配）。 */
 public final class NotifyMappers {
@@ -26,8 +27,28 @@ public final class NotifyMappers {
         public OffsetDateTime createdAt;
     }
 
+    public static class RecipientScopeRow {
+        public String userId;
+        public Long orgId;
+        public String orgPath;
+    }
+
     @Mapper
     public interface NotificationMapper {
+
+        @Select("""
+                <script>
+                SELECT e.user_id AS userId, a.org_unit_id AS orgId, o.path AS orgPath
+                  FROM oa_org.employee e
+                  LEFT JOIN oa_org.employee_org_assignment a
+                    ON a.employee_id=e.id AND a.assignment_type='PRIMARY' AND a.valid_to IS NULL
+                  LEFT JOIN oa_org.org_unit o ON o.tenant_id=e.tenant_id AND o.id=a.org_unit_id
+                 WHERE e.tenant_id=#{tenantId} AND e.status&lt;&gt;'LEFT' AND e.user_id IN
+                 <foreach item="id" collection="userIds" open="(" separator="," close=")">#{id}</foreach>
+                </script>
+                """)
+        List<RecipientScopeRow> recipientScopes(@Param("tenantId") long tenantId,
+                                                @Param("userIds") Collection<String> userIds);
 
         @Select("""
                 SELECT id, category, title, content, biz_type AS bizType, biz_id AS bizId, link,

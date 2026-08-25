@@ -1,10 +1,10 @@
 # 接口清单
 
 > **由源码抽取生成**（扫描全部 `@RestController` 的 `@RequestMapping` + 各 handler 的
-> `@RequiresPerm` / `@PublicApi`），与代码保持一致。四个可部署后端共 **135 个 handler**。
+> `@RequiresPerm` / `@PublicApi`），与代码保持一致。四个可部署后端共 **144 个 handler**。
 >
 > 这是一份**权限点对照表**：回答"这个接口需要什么权限"。
-> 请求/响应的字段契约以 **`GET :8400/v3/api-docs`**（springdoc，含 75 个 schema）为准，
+> 请求/响应的字段契约以 **`GET :8400/v3/api-docs`**（springdoc，含 111 个 schema）为准，
 > 前端可直接用它生成 TS 类型。
 
 ## 通用约定
@@ -101,10 +101,14 @@ ABAC 接口的策略维度、表达式上下文和组合规则见 [ABAC 授权�
 | POST | `/api/v1/iam/abac/conditions/{id}/enabled` | oa:iam:admin |
 | POST | `/api/v1/iam/abac/validate` | oa:iam:admin |
 | GET | `/api/v1/iam/delegations` | oa:iam:delegate |
+| GET | `/api/v1/iam/elevation-requests` | oa:iam:elevation:approve |
+| GET | `/api/v1/iam/elevation-requests/mine` | oa:iam:elevate |
 | GET | `/api/v1/iam/elevations/mine` | oa:iam:elevate |
 | POST | `/api/v1/iam/delegations` | oa:iam:delegate |
 | DELETE | `/api/v1/iam/delegations/{id}` | oa:iam:delegate |
 | POST | `/api/v1/iam/elevations` | oa:iam:elevate |
+| POST | `/api/v1/iam/elevation-requests/{id}/approve` | oa:iam:elevation:approve |
+| POST | `/api/v1/iam/elevation-requests/{id}/reject` | oa:iam:elevation:approve |
 | GET | `/api/v1/iam/grants` | oa:iam:view |
 | POST | `/api/v1/iam/grants` | oa:iam:grant |
 | DELETE | `/api/v1/iam/grants/{grantId}` | oa:iam:revoke |
@@ -116,9 +120,40 @@ ABAC 接口的策略维度、表达式上下文和组合规则见 [ABAC 授权�
 | POST | `/api/v1/iam/groups/{id}/members` | oa:iam:admin |
 | DELETE | `/api/v1/iam/groups/{id}/members/{userId}` | oa:iam:admin |
 | GET | `/api/v1/iam/permissions/catalog` | oa:iam:view |
+| GET | `/api/v1/iam/role-admin` | oa:iam:admin |
+| POST | `/api/v1/iam/role-admin` | oa:iam:admin |
+| GET | `/api/v1/iam/role-admin/{id}` | oa:iam:admin |
+| PUT | `/api/v1/iam/role-admin/{id}` | oa:iam:admin |
+| DELETE | `/api/v1/iam/role-admin/{id}` | oa:iam:admin |
+| POST | `/api/v1/iam/role-admin/{id}/copy` | oa:iam:admin |
+| POST | `/api/v1/iam/role-admin/{id}/enabled` | oa:iam:admin |
+| PUT | `/api/v1/iam/role-admin/{id}/permissions` | oa:iam:admin |
+| PUT | `/api/v1/iam/role-admin/{id}/inheritance` | oa:iam:admin |
 | GET | `/api/v1/iam/roles` | oa:iam:view |
 | GET | `/api/v1/iam/roles/mine` | oa:iam:elevate |
 | GET | `/api/v1/me/permissions` | (公开) |
+
+### 角色管理契约
+
+- `GET /role-admin` 支持 `status=ACTIVE|DISABLED|DELETED` 与 `keyword`；不传状态时排除软删除角色。
+- 创建请求包含 `code`、`name`、`defaultScope`，可同时传 `permissionIds`、`inheritedRoleIds`；
+  `code` 会转为大写，格式为 2～64 位字母、数字、下划线或连字符，且创建后不可修改。
+- 更新基本信息、启停、替换权限、替换继承和删除都必须携带详情/列表返回的 `version`。并发版本过期
+  返回 HTTP 409，前端应刷新角色详情后让管理员重新确认，不可静默覆盖。
+- `defaultScope` 支持 `ALL`、`ORG_AND_SUB`、`ORG`、`SELF`、`CUSTOM`、`NONE`；单次权限或继承关系
+  最多 1000 项。继承自己、形成环路、引用其他租户/已删除角色均会被拒绝。
+- `directPermissionIds` 是管理矩阵真值，`effectivePermissionIds` 包含继承所得权限；前端不得把后者
+  整体回写为直接权限。内置角色不可停用或删除，`SUPER_ADMIN` 的权限和继承矩阵不可在线修改。
+- 删除为软删除，存在任何授权历史时返回 409；停用角色不能再被授予或用于 JIT 激活，并会立即退出
+  ACTIVE-only 角色继承闭包。
+
+### 授权与 JIT 契约
+
+- `POST /grants` 会校验主体、角色、租户、授权人的数据范围与角色范围上限；CUSTOM 至少包含一个有效组织。
+- 直接给自己新增角色、越级授予高权角色、无 ALL 范围时给跨组织用户组授权均被拒绝；相同活跃授权幂等。
+- `POST /elevations` 只创建 `PENDING` 申请，不立即产生权限。批准人必须持有
+  `oa:iam:elevation:approve` 且不能是申请人；批准后生成带 `approvalInstanceId=ELEVATION:<requestId>`
+  的临时 elevation-only 授权。
 
 ## 工作台与审批　`oa-flow`　:8400
 
@@ -253,7 +288,7 @@ GET /api/v1/iam/permissions/catalog     # 需 oa:iam:view
 
 ## OpenAPI 与 TypeScript 契约
 
-`oa-app` 的字段级契约由 `GET /v3/api-docs` 提供。仓库固定了 96 条 path 的快照
+`oa-app` 的字段级契约由 `GET /v3/api-docs` 提供。仓库固定了 102 条 path 的快照
 `oa-console/openapi/oa-app.json`，并生成 `oa-console/src/shared/types/openapi.d.ts`：
 
 ```bash

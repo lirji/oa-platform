@@ -1,0 +1,97 @@
+-- 组织域数据字典注释。
+
+COMMENT ON TABLE oa_org.org_unit IS '统一组织单元表，承载集团、公司、部门、团队等任意层级节点';
+COMMENT ON COLUMN oa_org.org_unit.id IS '组织单元主键';
+COMMENT ON COLUMN oa_org.org_unit.tenant_id IS '租户标识，当前默认租户为 1';
+COMMENT ON COLUMN oa_org.org_unit.parent_id IS '父组织单元主键，根节点为空';
+COMMENT ON COLUMN oa_org.org_unit.code IS '租户内唯一的组织编码';
+COMMENT ON COLUMN oa_org.org_unit.name IS '组织全称';
+COMMENT ON COLUMN oa_org.org_unit.short_name IS '组织简称';
+COMMENT ON COLUMN oa_org.org_unit.type IS '组织类型：GROUP、COMPANY、BU、CENTER、DEPT、TEAM、SQUAD 或 VIRTUAL';
+COMMENT ON COLUMN oa_org.org_unit.path IS '物化路径，格式如 /1/23/456/，用于子树查询和数据权限前缀过滤';
+COMMENT ON COLUMN oa_org.org_unit.depth IS '节点在组织树中的深度，根节点通常为 0';
+COMMENT ON COLUMN oa_org.org_unit.sort_order IS '同级组织的展示顺序';
+COMMENT ON COLUMN oa_org.org_unit.leader_user_id IS '组织负责人的 Casdoor sub';
+COMMENT ON COLUMN oa_org.org_unit.deputy_leader_user_id IS '组织副负责人的 Casdoor sub';
+COMMENT ON COLUMN oa_org.org_unit.cost_center IS '财务成本中心编码';
+COMMENT ON COLUMN oa_org.org_unit.status IS '组织状态：ACTIVE、FROZEN 或 DISSOLVED';
+COMMENT ON COLUMN oa_org.org_unit.effective_from IS '组织生效日期';
+COMMENT ON COLUMN oa_org.org_unit.effective_to IS '组织失效日期，为空表示持续有效';
+COMMENT ON COLUMN oa_org.org_unit.remark IS '组织备注';
+COMMENT ON COLUMN oa_org.org_unit.version IS '乐观锁版本号';
+COMMENT ON COLUMN oa_org.org_unit.created_by IS '创建人的 Casdoor sub';
+COMMENT ON COLUMN oa_org.org_unit.created_at IS '创建时间';
+COMMENT ON COLUMN oa_org.org_unit.updated_by IS '最后修改人的 Casdoor sub';
+COMMENT ON COLUMN oa_org.org_unit.updated_at IS '最后修改时间';
+
+COMMENT ON TABLE oa_org.org_closure IS '组织树闭包关系表，保存每个祖先与后代组合及距离';
+COMMENT ON COLUMN oa_org.org_closure.ancestor_id IS '祖先组织单元主键';
+COMMENT ON COLUMN oa_org.org_closure.descendant_id IS '后代组织单元主键';
+COMMENT ON COLUMN oa_org.org_closure.distance IS '祖先到后代的层级距离，自身关系为 0';
+
+COMMENT ON TABLE oa_org.job_position IS '岗位目录表，定义职族、职级和管理属性';
+COMMENT ON COLUMN oa_org.job_position.id IS '岗位主键';
+COMMENT ON COLUMN oa_org.job_position.tenant_id IS '租户标识，当前默认租户为 1';
+COMMENT ON COLUMN oa_org.job_position.code IS '租户内唯一的岗位编码';
+COMMENT ON COLUMN oa_org.job_position.name IS '岗位名称';
+COMMENT ON COLUMN oa_org.job_position.job_family IS '职族，如研发、产品、销售或职能';
+COMMENT ON COLUMN oa_org.job_position.job_level IS '职级，如 P5、M3';
+COMMENT ON COLUMN oa_org.job_position.is_manager IS '是否为管理岗位';
+COMMENT ON COLUMN oa_org.job_position.status IS '岗位状态，默认 ACTIVE';
+COMMENT ON COLUMN oa_org.job_position.created_at IS '创建时间';
+COMMENT ON COLUMN oa_org.job_position.updated_at IS '最后修改时间';
+
+COMMENT ON TABLE oa_org.employee IS '员工主数据表，保存主体标识、人员档案和敏感联系方式';
+COMMENT ON COLUMN oa_org.employee.id IS '员工内部主键';
+COMMENT ON COLUMN oa_org.employee.tenant_id IS '租户标识，当前默认租户为 1';
+COMMENT ON COLUMN oa_org.employee.user_id IS '全系统统一主体标识，即 Casdoor JWT 的 sub';
+COMMENT ON COLUMN oa_org.employee.emp_no IS '租户内唯一的员工编号';
+COMMENT ON COLUMN oa_org.employee.name IS '员工中文姓名';
+COMMENT ON COLUMN oa_org.employee.en_name IS '员工英文名';
+COMMENT ON COLUMN oa_org.employee.avatar IS '头像地址';
+COMMENT ON COLUMN oa_org.employee.mobile_enc IS '手机号密文';
+COMMENT ON COLUMN oa_org.employee.mobile_hash IS '手机号确定性 HMAC，用于不解密的精确检索';
+COMMENT ON COLUMN oa_org.employee.email IS '电子邮箱';
+COMMENT ON COLUMN oa_org.employee.id_card_enc IS '身份证件号码密文';
+COMMENT ON COLUMN oa_org.employee.id_card_hash IS '身份证件号码确定性 HMAC，用于精确检索';
+COMMENT ON COLUMN oa_org.employee.gender IS '性别代码';
+COMMENT ON COLUMN oa_org.employee.birthday IS '出生日期';
+COMMENT ON COLUMN oa_org.employee.hire_date IS '入职日期';
+COMMENT ON COLUMN oa_org.employee.regular_date IS '转正日期';
+COMMENT ON COLUMN oa_org.employee.leave_date IS '离职日期';
+COMMENT ON COLUMN oa_org.employee.employment_type IS '用工类型：FULL_TIME、INTERN、OUTSOURCE 或 CONSULTANT';
+COMMENT ON COLUMN oa_org.employee.status IS '员工状态：PROBATION、ACTIVE、LEAVING 或 LEFT';
+COMMENT ON COLUMN oa_org.employee.version IS '乐观锁版本号';
+COMMENT ON COLUMN oa_org.employee.created_by IS '创建人的 Casdoor sub';
+COMMENT ON COLUMN oa_org.employee.created_at IS '创建时间';
+COMMENT ON COLUMN oa_org.employee.updated_by IS '最后修改人的 Casdoor sub';
+COMMENT ON COLUMN oa_org.employee.updated_at IS '最后修改时间';
+COMMENT ON COLUMN oa_org.employee.sync_seq IS '通讯录增量同步的单调递增水位线';
+
+COMMENT ON TABLE oa_org.employee_org_assignment IS '员工任职拉链表，支持主岗、兼岗、虚线任职和历史还原';
+COMMENT ON COLUMN oa_org.employee_org_assignment.id IS '任职记录主键';
+COMMENT ON COLUMN oa_org.employee_org_assignment.tenant_id IS '租户标识，当前默认租户为 1';
+COMMENT ON COLUMN oa_org.employee_org_assignment.employee_id IS '员工内部主键';
+COMMENT ON COLUMN oa_org.employee_org_assignment.org_unit_id IS '任职组织单元主键';
+COMMENT ON COLUMN oa_org.employee_org_assignment.position_id IS '任职岗位主键';
+COMMENT ON COLUMN oa_org.employee_org_assignment.assignment_type IS '任职类型：PRIMARY、CONCURRENT 或 DOTTED';
+COMMENT ON COLUMN oa_org.employee_org_assignment.is_leader IS '是否担任该组织的负责人';
+COMMENT ON COLUMN oa_org.employee_org_assignment.valid_from IS '任职生效日期';
+COMMENT ON COLUMN oa_org.employee_org_assignment.valid_to IS '任职失效日期，为空表示当前有效';
+COMMENT ON COLUMN oa_org.employee_org_assignment.created_by IS '创建人的 Casdoor sub';
+COMMENT ON COLUMN oa_org.employee_org_assignment.created_at IS '创建时间';
+
+COMMENT ON TABLE oa_org.reporting_line IS '独立于组织树的员工汇报关系拉链表';
+COMMENT ON COLUMN oa_org.reporting_line.id IS '汇报关系主键';
+COMMENT ON COLUMN oa_org.reporting_line.tenant_id IS '租户标识，当前默认租户为 1';
+COMMENT ON COLUMN oa_org.reporting_line.employee_id IS '下属员工内部主键';
+COMMENT ON COLUMN oa_org.reporting_line.manager_employee_id IS '上级员工内部主键';
+COMMENT ON COLUMN oa_org.reporting_line.type IS '汇报线类型：SOLID 实线或 DOTTED 虚线';
+COMMENT ON COLUMN oa_org.reporting_line.valid_from IS '汇报关系生效日期';
+COMMENT ON COLUMN oa_org.reporting_line.valid_to IS '汇报关系失效日期，为空表示当前有效';
+COMMENT ON COLUMN oa_org.reporting_line.created_at IS '创建时间';
+
+COMMENT ON TABLE oa_org.org_tree_version IS '组织树全局版本单行表，用于跨节点缓存失效与轮询兜底';
+COMMENT ON COLUMN oa_org.org_tree_version.id IS '固定为 1 的单行主键';
+COMMENT ON COLUMN oa_org.org_tree_version.version IS '组织树当前全局版本号';
+COMMENT ON COLUMN oa_org.org_tree_version.updated_at IS '版本最后推进时间';

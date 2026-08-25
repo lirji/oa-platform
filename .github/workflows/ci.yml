@@ -37,6 +37,8 @@ jobs:
         run: mvn -B -q -f .ci-deps/auth-platform/pom.xml -pl auth-platform-sdk -am install -DskipTests
       - name: Test backend reactor
         run: mvn -B test
+      - name: Validate Docker deployment contract
+        run: docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps config -q
 
   console:
     name: PC Console / Node 20

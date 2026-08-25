@@ -97,7 +97,8 @@ public class PermissionSnapshotBuilder {
             groupIds.add(String.valueOf(id));
         }
 
-        List<GrantRecord> grants = grantMapper.selectApplicable(userId, orgSubjects, positionIds, groupIds, now);
+        long tenantId = TenantContext.get();
+        List<GrantRecord> grants = grantMapper.selectApplicable(tenantId, userId, orgSubjects, positionIds, groupIds, now);
 
         PermissionSnapshot.Builder sb = PermissionSnapshot.builder(userId)
                 .epoch(epoch).userVersion(userVersion).abacEnabled(abacEnabled);
@@ -132,29 +133,36 @@ public class PermissionSnapshotBuilder {
                 Set<Integer> perms = permsByRole.getOrDefault(g.getRoleId(), Set.of());
                 if (perms.isEmpty()) continue;
 
+                // JIT 只激活用户已经持有角色中的高危权限。它不能成为新的 RBAC/ABAC/scope 来源，
+                // 否则一条 scope=ALL 的临时记录会把 CUSTOM/ORG/SELF 静默扩大为全公司。
+                if (g.jitElevation()) {
+                    for (int permId : perms) {
+                        if (catalog.requiresElevation(permId)) sb.addElevated(permId);
+                    }
+                    continue;
+                }
+
                 DataScopeRule rule = resolveScope(g, scopeOrgIds, userId);
-                boolean temporary = g.grantTypeEnum() == GrantType.TEMPORARY;
 
                 for (int permId : perms) {
                     sb.addPerm(permId, catalog.codeOf(permId));
                     if (abacEnabled) {
                         List<AbacBranch.Condition> rules = conditions.get(new RolePermission(g.getRoleId(), permId));
-                        if (rules == null || rules.isEmpty()) sb.markAbacUnconditional(permId);
+                        if (rules == null || rules.isEmpty()) sb.markAbacUnconditional(permId, g.getRoleId());
                         else sb.addAbacBranch(permId, new AbacBranch(g.getRoleId(), rules));
                     }
-                    if (temporary) sb.addElevated(permId);
                     String module = catalog.moduleOf(permId);
-                    sb.scope(permId, module, rule);
+                    sb.scope(g.getRoleId(), permId, module, rule);
                 }
             }
         }
 
-        sb.delegators(delegationMapper.selectDelegatorsOf(userId));
+        sb.delegators(delegationMapper.selectDelegatorsOf(TenantContext.get(), userId));
 
         // ★ TTL 不能越过最近一条临时授权的到期时刻，否则过期提权会被继续放行
         long expireAt = System.currentTimeMillis() + ttlMs;
         OffsetDateTime boundary = minBoundary(
-                grantMapper.nextBoundary(userId, orgSubjects, positionIds, groupIds, now),
+                grantMapper.nextBoundary(tenantId, userId, orgSubjects, positionIds, groupIds, now),
                 userGroupMapper.nextMembershipBoundary(TenantContext.get(), userId, now));
         if (boundary != null) {
             long boundaryMs = boundary.toInstant().toEpochMilli();
@@ -221,7 +229,9 @@ public class PermissionSnapshotBuilder {
                 Set<Long> ids = parseOrgIds(g.getScopeOrgIds());
                 if (ids.isEmpty()) yield DataScopeRule.none();
                 yield new DataScopeRule(DataScopeType.CUSTOM,
-                        orgQuery.minimalPathPrefixes(ids), ids, userId);
+                        Boolean.TRUE.equals(g.getIncludeDescendants())
+                                ? orgQuery.minimalPathPrefixes(ids) : List.of(),
+                        ids, userId);
             }
             case NONE -> DataScopeRule.none();
         };

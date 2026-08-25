@@ -21,7 +21,7 @@ import java.util.*;
  */
 public final class SnapshotCodec {
 
-    private static final int SCHEMA_VERSION = 2;
+    private static final int SCHEMA_VERSION = 3;
 
     private final ObjectMapper json;
 
@@ -34,8 +34,9 @@ public final class SnapshotCodec {
     record SnapshotDto(int schemaVersion, String userId, long epoch, long userVersion,
                        String permBits, String elevatedBits, List<String> permCodes,
                        ScopeDto merged, Map<String, ScopeDto> modules, Map<Integer, ScopeDto> permissions,
+                       Map<Integer, Map<Long, ScopeDto>> permissionRoles,
                        List<String> delegators, boolean abacEnabled, String abacUnconditionalBits,
-                       Map<Integer, List<AbacBranch>> abacBranches,
+                       Map<Integer, List<AbacBranch>> abacBranches, Map<Integer, Set<Long>> abacUnconditionalRoles,
                        long builtAt, long expireAt) {}
 
     public String encode(PermissionSnapshot s) throws IOException {
@@ -43,12 +44,18 @@ public final class SnapshotCodec {
         s.moduleScope().forEach((k, v) -> modules.put(k, toDto(v)));
         Map<Integer, ScopeDto> permissions = HashMap.newHashMap(s.permissionScope().size());
         s.permissionScope().forEach((k, v) -> permissions.put(k, toDto(v)));
+        Map<Integer, Map<Long, ScopeDto>> permissionRoles = new HashMap<>();
+        s.permissionRoleScope().forEach((permission, scopes) -> {
+            Map<Long, ScopeDto> values = new HashMap<>();
+            scopes.forEach((role, scope) -> values.put(role, toDto(scope)));
+            permissionRoles.put(permission, values);
+        });
         return json.writeValueAsString(new SnapshotDto(
                 SCHEMA_VERSION, s.userId(), s.epoch(), s.userVersion(),
                 encodeBitmap(s.permBits()), encodeBitmap(s.elevatedBits()),
-                List.copyOf(s.permCodes()), toDto(s.mergedScope()), modules, permissions,
+                List.copyOf(s.permCodes()), toDto(s.mergedScope()), modules, permissions, permissionRoles,
                 List.copyOf(s.delegators()), s.abacEnabled(), encodeBitmap(s.abacUnconditionalBits()),
-                s.abacBranches(), s.builtAt(), s.expireAt()));
+                s.abacBranches(), s.abacUnconditionalRoles(), s.builtAt(), s.expireAt()));
     }
 
     public PermissionSnapshot decode(String payload) throws IOException {
@@ -61,15 +68,23 @@ public final class SnapshotCodec {
         Map<Integer, DataScopeRule> permissions = HashMap.newHashMap(
                 d.permissions() == null ? 0 : d.permissions().size());
         if (d.permissions() != null) d.permissions().forEach((k, v) -> permissions.put(k, fromDto(v)));
+        Map<Integer, Map<Long, DataScopeRule>> permissionRoles = new HashMap<>();
+        if (d.permissionRoles() != null) d.permissionRoles().forEach((permission, scopes) -> {
+            Map<Long, DataScopeRule> values = new HashMap<>();
+            scopes.forEach((role, scope) -> values.put(role, fromDto(scope)));
+            permissionRoles.put(permission, values);
+        });
         return PermissionSnapshot.builder(d.userId())
                 .epoch(d.epoch()).userVersion(d.userVersion())
                 .rawBits(decodeBitmap(d.permBits()), decodeBitmap(d.elevatedBits()),
                         d.permCodes() == null ? List.of() : d.permCodes())
                 .rawScope(fromDto(d.merged()), modules)
                 .rawPermissionScope(permissions)
+                .rawPermissionRoleScope(permissionRoles)
                 .delegators(d.delegators() == null ? List.of() : d.delegators())
                 .rawAbac(d.abacEnabled(), decodeBitmap(d.abacUnconditionalBits()),
-                        d.abacBranches() == null ? Map.of() : d.abacBranches())
+                        d.abacBranches() == null ? Map.of() : d.abacBranches(),
+                        d.abacUnconditionalRoles() == null ? Map.of() : d.abacUnconditionalRoles())
                 .builtAt(d.builtAt()).expireAt(d.expireAt())
                 .build();
     }

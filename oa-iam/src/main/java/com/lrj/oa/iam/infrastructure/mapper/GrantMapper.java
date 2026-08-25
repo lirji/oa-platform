@@ -27,7 +27,8 @@ public interface GrantMapper extends BaseMapper<GrantRecord> {
     @Select("""
             <script>
             SELECT * FROM oa_iam.grant_record
-             WHERE revoked_at IS NULL
+             WHERE tenant_id = #{tenantId}
+               AND revoked_at IS NULL
                AND valid_from &lt;= #{now}
                AND (valid_to IS NULL OR valid_to &gt; #{now})
                AND (
@@ -47,7 +48,8 @@ public interface GrantMapper extends BaseMapper<GrantRecord> {
                )
             </script>
             """)
-    List<GrantRecord> selectApplicable(@Param("userId") String userId,
+    List<GrantRecord> selectApplicable(@Param("tenantId") long tenantId,
+                                       @Param("userId") String userId,
                                        @Param("orgIds") Collection<String> orgIds,
                                        @Param("positionIds") Collection<String> positionIds,
                                        @Param("groupIds") Collection<String> groupIds,
@@ -58,7 +60,7 @@ public interface GrantMapper extends BaseMapper<GrantRecord> {
             <script>
             SELECT min(boundary) FROM (
             SELECT valid_from AS boundary FROM oa_iam.grant_record
-             WHERE revoked_at IS NULL AND valid_from &gt; #{now}
+             WHERE tenant_id = #{tenantId} AND revoked_at IS NULL AND valid_from &gt; #{now}
                AND (
                     (subject_type = 'USER' AND subject_id = #{userId})
                 <if test="orgIds != null and orgIds.size() > 0">
@@ -76,7 +78,7 @@ public interface GrantMapper extends BaseMapper<GrantRecord> {
                )
             UNION ALL
             SELECT valid_to AS boundary FROM oa_iam.grant_record
-             WHERE revoked_at IS NULL AND valid_to IS NOT NULL AND valid_to &gt; #{now}
+             WHERE tenant_id = #{tenantId} AND revoked_at IS NULL AND valid_to IS NOT NULL AND valid_to &gt; #{now}
                AND (
                     (subject_type = 'USER' AND subject_id = #{userId})
                 <if test="orgIds != null and orgIds.size() > 0">
@@ -95,27 +97,53 @@ public interface GrantMapper extends BaseMapper<GrantRecord> {
             ) boundaries
             </script>
             """)
-    OffsetDateTime nextBoundary(@Param("userId") String userId,
+    OffsetDateTime nextBoundary(@Param("tenantId") long tenantId,
+                                @Param("userId") String userId,
                                 @Param("orgIds") Collection<String> orgIds,
                                 @Param("positionIds") Collection<String> positionIds,
                                 @Param("groupIds") Collection<String> groupIds,
                                 @Param("now") OffsetDateTime now);
 
-    @Select("SELECT * FROM oa_iam.grant_record WHERE subject_type = #{type} AND subject_id = #{id} AND revoked_at IS NULL ORDER BY id DESC")
-    List<GrantRecord> selectBySubject(@Param("type") String type, @Param("id") String id);
+    @Select("SELECT * FROM oa_iam.grant_record WHERE tenant_id=#{tenantId} AND subject_type = #{type} AND subject_id = #{id} AND revoked_at IS NULL ORDER BY id DESC")
+    List<GrantRecord> selectBySubject(@Param("tenantId") long tenantId,
+                                      @Param("type") String type, @Param("id") String id);
+
+    @Select("SELECT pg_advisory_xact_lock(hashtextextended(#{key}, 0))")
+    long lockGrantKey(@Param("key") String key);
+
+    @Select("""
+            SELECT * FROM oa_iam.grant_record
+             WHERE tenant_id=#{tenantId} AND subject_type=#{subjectType} AND subject_id=#{subjectId}
+               AND role_id=#{roleId} AND scope_type=#{scopeType}
+               AND coalesce(scope_org_ids, '[]'::jsonb)=CAST(#{scopeOrgIds} AS jsonb)
+               AND include_descendants=#{includeDescendants} AND grant_type=#{grantType}
+               AND revoked_at IS NULL AND (valid_to IS NULL OR valid_to&gt;now())
+               AND ((#{validTo} IS NULL AND valid_to IS NULL) OR valid_to=#{validTo})
+             ORDER BY id DESC LIMIT 1
+            """)
+    GrantRecord selectDuplicateActive(@Param("tenantId") long tenantId,
+                                      @Param("subjectType") String subjectType,
+                                      @Param("subjectId") String subjectId,
+                                      @Param("roleId") long roleId,
+                                      @Param("scopeType") String scopeType,
+                                      @Param("scopeOrgIds") String scopeOrgIds,
+                                      @Param("includeDescendants") boolean includeDescendants,
+                                      @Param("grantType") String grantType,
+                                      @Param("validTo") OffsetDateTime validTo);
 
     @Update("""
             UPDATE oa_iam.grant_record
                SET revoked_at = now(), revoked_by = #{by}, revoke_reason = #{reason}
-             WHERE id = #{id} AND revoked_at IS NULL
+             WHERE tenant_id=#{tenantId} AND id=#{id} AND revoked_at IS NULL
             """)
-    int revoke(@Param("id") Long id, @Param("by") String by, @Param("reason") String reason);
+    int revoke(@Param("tenantId") long tenantId, @Param("id") Long id,
+               @Param("by") String by, @Param("reason") String reason);
 
     /** 到期回收任务用：列出刚过期但还没归档的授权。 */
     @Select("""
             SELECT * FROM oa_iam.grant_record
-             WHERE revoked_at IS NULL AND valid_to IS NOT NULL AND valid_to <= now()
+             WHERE tenant_id=#{tenantId} AND revoked_at IS NULL AND valid_to IS NOT NULL AND valid_to <= now()
              ORDER BY valid_to LIMIT #{limit}
             """)
-    List<GrantRecord> selectExpired(@Param("limit") int limit);
+    List<GrantRecord> selectExpired(@Param("tenantId") long tenantId, @Param("limit") int limit);
 }

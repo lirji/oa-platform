@@ -104,16 +104,34 @@ class DataScopeConditionTest {
     }
 
     @Test
-    @DisplayName("前缀过多时降级为 id 列表，避免 WHERE 里挂一长串 OR")
-    void too_many_prefixes_degrade_to_id_list() {
+    @DisplayName("★ 前缀过多时不能用不完整的锚点 id 降级而丢失下级组织")
+    void too_many_prefixes_preserve_descendant_semantics() {
         List<String> many = List.of("/1/1/", "/1/2/", "/1/3/", "/1/4/",
                                     "/1/5/", "/1/6/", "/1/7/", "/1/8/", "/1/9/");
         assertThat(many.size()).isGreaterThan(DataScopeRule.MAX_PREFIXES);
         DataScopeContext.set(scope("t"), new DataScopeRule(
-                DataScopeType.CUSTOM, many, Set.of(1L, 2L, 3L), "u-1"));
+                DataScopeType.ORG_AND_SUB, many, Set.of(1L, 2L, 3L), "u-1"));
         String sql = handler.getSqlSegment(tableAliased("t"), null, "stmt").toString();
-        assertThat(sql).contains("org_id").contains("IN");
-        assertThat(sql).doesNotContain("LIKE");
+        assertThat(sql).contains("/1/1/%").contains("/1/9/%").contains("LIKE");
+    }
+
+    @Test
+    @DisplayName("CUSTOM 精确组织在不包含下级时仍按 org_id 生效")
+    void custom_exact_orgs_use_id_predicate() {
+        DataScopeContext.set(scope("t"), new DataScopeRule(
+                DataScopeType.CUSTOM, List.of(), Set.of(23L, 45L), null));
+        String sql = handler.getSqlSegment(tableAliased("t"), null, "stmt").toString();
+        assertThat(sql).contains("org_id").contains("23").contains("45").doesNotContain("LIKE");
+    }
+
+    @Test
+    @DisplayName("混合范围用 OR 保留子树、精确组织和本人三部分")
+    void custom_union_keeps_all_components() {
+        DataScopeContext.set(scope("t"), new DataScopeRule(
+                DataScopeType.CUSTOM, List.of("/1/2/"), Set.of(45L), "u-1"));
+        String sql = handler.getSqlSegment(tableAliased("t"), null, "stmt").toString();
+        assertThat(sql).contains("/1/2/%").contains("org_id").contains("45")
+                .contains("user_id").contains("u-1").contains("OR");
     }
 
     @Test

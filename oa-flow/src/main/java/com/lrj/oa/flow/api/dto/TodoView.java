@@ -8,6 +8,7 @@ public class TodoView {
     private Long id;
     private String taskId;
     private String processInstanceId;
+    private String processDefinitionKey;
     private Long instanceId;
     private String bizType;
     private String title;
@@ -15,6 +16,7 @@ public class TodoView {
     private String applicantUserId;
     private String applicantName;
     private String assigneeUserId;
+    private String candidateGroup;
     private String state;
     private Long orgId;
     private String orgPath;
@@ -27,6 +29,8 @@ public class TodoView {
     public void setTaskId(String v) { this.taskId = v; }
     public String getProcessInstanceId() { return processInstanceId; }
     public void setProcessInstanceId(String v) { this.processInstanceId = v; }
+    public String getProcessDefinitionKey() { return processDefinitionKey; }
+    public void setProcessDefinitionKey(String v) { this.processDefinitionKey = v; }
     public Long getInstanceId() { return instanceId; }
     public void setInstanceId(Long v) { this.instanceId = v; }
     public String getBizType() { return bizType; }
@@ -41,6 +45,8 @@ public class TodoView {
     public void setApplicantName(String v) { this.applicantName = v; }
     public String getAssigneeUserId() { return assigneeUserId; }
     public void setAssigneeUserId(String v) { this.assigneeUserId = v; }
+    public String getCandidateGroup() { return candidateGroup; }
+    public void setCandidateGroup(String v) { this.candidateGroup = v; }
     public String getState() { return state; }
     public void setState(String v) { this.state = v; }
     public Long getOrgId() { return orgId; }

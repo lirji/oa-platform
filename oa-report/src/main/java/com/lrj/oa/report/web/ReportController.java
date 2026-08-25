@@ -24,7 +24,14 @@ public class ReportController {
 
     @GetMapping("/overview")
     @RequiresPerm("oa:report:view")
-    public Result<Map<String, Object>> overview() { return Result.ok(dashboard.overview()); }
+    public Result<Map<String, Object>> overview() {
+        // 从 Controller 经 Spring 代理分别进入四个 @DataScope 方法，避免同类自调用绕过切面。
+        return Result.ok(Map.of(
+                "headcountTop", dashboard.headcount(null, 5),
+                "approval", dashboard.approvalEfficiency(),
+                "attendance", dashboard.attendanceSummary(7),
+                "asset", dashboard.assetSummary()));
+    }
 
     @GetMapping("/headcount")
     @RequiresPerm("oa:report:view")
