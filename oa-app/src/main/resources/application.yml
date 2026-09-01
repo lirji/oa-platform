@@ -77,6 +77,12 @@ oa:
       l1-max-size: 20000
       l2-enabled: true         # Redis 二级缓存（冷启动/被挤出 L1 时用）
       l2-ttl-seconds: 1800
+      # 滚动升级到 V18 期间保持 true，让新节点也观察旧节点推进的全局 epoch；全员升级后改 false。
+      legacy-epoch-fence-enabled: ${OA_IAM_LEGACY_EPOCH_FENCE_ENABLED:true}
+    outbox:
+      enabled: ${OA_IAM_OUTBOX_ENABLED:true} # 角色领域事件可靠投递；不影响 Redis 权限失效链路
+      poll-ms: 1000
+      batch-size: 100
     abac:
       enabled: ${OA_IAM_ABAC_ENABLED:false} # 先配置/预览策略，再按环境灰度开启
     shadow-verify:

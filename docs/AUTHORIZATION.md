@@ -255,13 +255,16 @@ Content-Type: application/json
 
 ## 8. 变更、缓存与审计
 
-权限快照采用 L1 Caffeine、L2 Redis、L3 数据库重算。收权、角色矩阵、组织继承、用户组和 ABAC
-策略等可能影响多人时推进全局 epoch；只影响个人的加权可推进用户版本。Redis 通知负责快速传播，
-数据库版本是重启后仍有效的真值；临时授权和组成员的最近时间边界会压低快照 TTL。
+权限快照采用 L1 Caffeine、L2 Redis、L3 数据库重算，缓存键均包含租户。收权、角色矩阵、组织继承、
+用户组和 ABAC 策略等可能影响多人时推进租户 epoch；只影响个人的加权可推进用户版本。Redis 通知在
+事务提交后负责快速传播，数据库版本是重启后仍有效的真值；临时授权和组成员的最近时间边界会压低
+快照 TTL。角色变更还会同事务写 `iam_outbox`，异步投递 `iam.role.changed.v1`，但 Kafka 不参与判权。
 
 关键指标：
 
 - 判权一致性：`oa_perm_mismatch_total`；
+- IAM 事件：`oa_iam_outbox_sent_total`、`oa_iam_outbox_failed_total`、
+  `oa_iam_outbox_pending`、`oa_iam_outbox_dead`；
 - ABAC：`oa_iam_abac_evaluations_total`、`oa_iam_abac_denied_total`、`oa_iam_abac_errors_total`；
 - 数据权限：`oa_data_scope_evaluations_total`、`oa_data_scope_predicates_total`、
   `oa_data_scope_denied_total`、`oa_data_scope_missing_total`、

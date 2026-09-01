@@ -64,7 +64,7 @@ public class RoleAdminService {
         replacePermissionsUnchecked(tenantId, role.getId(), unique(cmd.permissionIds(), "权限"));
         replaceInheritanceUnchecked(tenantId, role.getId(), unique(cmd.inheritedRoleIds(), "继承角色"));
         rebuildClosure(tenantId);
-        invalidation.all("role-create#" + role.getId());
+        invalidation.roleChanged(role.getId(), "CREATED", "role-create#" + role.getId());
         return role.getId();
     }
 
@@ -76,7 +76,7 @@ public class RoleAdminService {
                 blankToNull(cmd.remark()), cmd.version()) == 0) {
             conflict();
         }
-        invalidation.all("role-update#" + id);
+        invalidation.roleChanged(id, "METADATA_UPDATED", "role-update#" + id);
     }
 
     @Transactional
@@ -103,7 +103,7 @@ public class RoleAdminService {
         replacePermissionsUnchecked(tenantId, copy.getId(), mapper.selectDirectPermissionIds(id));
         replaceInheritanceUnchecked(tenantId, copy.getId(), mapper.selectInheritedRoleIds(tenantId, id));
         rebuildClosure(tenantId);
-        invalidation.all("role-copy#" + id + "->" + copy.getId());
+        invalidation.roleChanged(copy.getId(), "COPIED", "role-copy#" + id + "->" + copy.getId());
         return copy.getId();
     }
 
@@ -119,7 +119,7 @@ public class RoleAdminService {
             conflict();
         }
         rebuildClosure(tenantId);
-        invalidation.all("role-status#" + id + "=" + cmd.enabled());
+        invalidation.roleChanged(id, "STATUS_CHANGED", "role-status#" + id + "=" + cmd.enabled());
     }
 
     @Transactional
@@ -139,7 +139,7 @@ public class RoleAdminService {
         mapper.deleteIncomingInheritanceEdges(tenantId, id);
         if (mapper.softDelete(tenantId, id, version) == 0) conflict();
         rebuildClosure(tenantId);
-        invalidation.all("role-delete#" + id);
+        invalidation.roleChanged(id, "DELETED", "role-delete#" + id);
     }
 
     @Transactional
@@ -150,7 +150,7 @@ public class RoleAdminService {
         List<Long> ids = unique(cmd.permissionIds(), "权限");
         if (mapper.touchVersion(tenantId, id, cmd.version()) == 0) conflict();
         replacePermissionsUnchecked(tenantId, id, ids);
-        invalidation.all("role-permissions#" + id);
+        invalidation.roleChanged(id, "PERMISSIONS_REPLACED", "role-permissions#" + id);
     }
 
     @Transactional
@@ -171,7 +171,7 @@ public class RoleAdminService {
             throw BusinessException.of(ResultCode.CONFLICT, "角色继承不能形成环路");
         }
         rebuildClosure(tenantId);
-        invalidation.all("role-inheritance#" + id);
+        invalidation.roleChanged(id, "INHERITANCE_REPLACED", "role-inheritance#" + id);
     }
 
     private RoleDetail detail(long tenantId, Role role) {

@@ -1,15 +1,12 @@
 package com.lrj.oa.iam.application;
 
-import com.lrj.oa.common.cache.CacheInvalidation;
-import com.lrj.oa.common.cache.InvalidationBus;
-import com.lrj.oa.iam.infrastructure.cache.PermissionEngine;
-import com.lrj.oa.iam.infrastructure.mapper.PermVersionMapper;
 import com.lrj.oa.org.api.event.EmployeeAssignmentChangedEvent;
 import com.lrj.oa.org.api.event.OrgTreeChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
@@ -23,18 +20,13 @@ public class OrgChangeListener {
 
     private static final Logger log = LoggerFactory.getLogger(OrgChangeListener.class);
 
-    private final PermVersionMapper versionMapper;
-    private final PermissionEngine engine;
     private final com.lrj.oa.iam.infrastructure.mapper.GrantMapper grantMapper;
-    private final InvalidationBus bus;
+    private final IamInvalidationService invalidation;
 
-    public OrgChangeListener(PermVersionMapper versionMapper, PermissionEngine engine,
-                             com.lrj.oa.iam.infrastructure.mapper.GrantMapper grantMapper,
-                             ObjectProvider<InvalidationBus> busProvider) {
-        this.versionMapper = versionMapper;
-        this.engine = engine;
+    public OrgChangeListener(com.lrj.oa.iam.infrastructure.mapper.GrantMapper grantMapper,
+                             IamInvalidationService invalidation) {
         this.grantMapper = grantMapper;
-        this.bus = busProvider.getIfAvailable();
+        this.invalidation = invalidation;
     }
 
     /**
@@ -45,6 +37,7 @@ public class OrgChangeListener {
      * 权限就会"复活"。离职是收权动作，必须落到授权本身。
      */
     @TransactionalEventListener(fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onAssignmentChanged(EmployeeAssignmentChangedEvent event) {
         String userId = event.userId();
         if (event.left()) {
@@ -54,25 +47,20 @@ public class OrgChangeListener {
                 revoked += grantMapper.revoke(tenantId,
                         g.getId(), "system", "员工离职自动回收");
             }
-            versionMapper.bumpEpoch();
-            engine.evictAllLocal();
-            if (bus != null) bus.publish(CacheInvalidation.TYPE_PERM_EPOCH, "");
+            invalidation.all("employee-left#" + userId);
             log.warn("员工 {} 离职，已撤销其 {} 条授权", userId, revoked);
             return;
         }
         // 任职变化既可能加权也可能收权；Pub/Sub 丢失时仅 bump userVersion 无法让热路径发现。
-        // 统一推进全局 epoch，保证调岗/关闭兼岗带来的范围收缩在 1 秒内可靠生效。
-        versionMapper.bumpEpoch();
-        engine.evictAllLocal();
-        if (bus != null) bus.publish(CacheInvalidation.TYPE_PERM_EPOCH, "");
-        log.info("任职变更（{}）推进全局权限纪元，可靠作废 {} 的旧范围", event.reason(), userId);
+        // 统一推进租户 epoch，保证调岗/关闭兼岗带来的范围收缩在 1 秒内可靠生效。
+        invalidation.all("assignment-changed#" + userId + ":" + event.reason());
+        log.info("任职变更（{}）推进租户权限纪元，可靠作废 {} 的旧范围", event.reason(), userId);
     }
 
     @TransactionalEventListener(fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onOrgTreeChanged(OrgTreeChangedEvent event) {
-        versionMapper.bumpEpoch();
-        engine.evictAllLocal();
-        if (bus != null) bus.publish(CacheInvalidation.TYPE_PERM_EPOCH, "");
-        log.info("组织树变更（{}）连带作废全部权限快照", event.reason());
+        invalidation.all("org-tree-changed:" + event.reason());
+        log.info("组织树变更（{}）连带作废当前租户权限快照", event.reason());
     }
 }

@@ -38,13 +38,16 @@ public class PermissionSnapshotBuilder {
     private final ObjectMapper json;
     private final long ttlMs;
     private final boolean abacEnabled;
+    private final boolean legacyEpochFenceEnabled;
 
     public PermissionSnapshotBuilder(OrgQueryApi orgQuery, GrantMapper grantMapper, RoleMapper roleMapper,
                                      DelegationMapper delegationMapper, PermVersionMapper versionMapper,
                                      PermissionCatalog catalog, UserGroupMapper userGroupMapper,
                                      PermissionConditionMapper conditionMapper, ObjectMapper json,
                                      @Value("${oa.iam.cache.ttl-ms:300000}") long ttlMs,
-                                     @Value("${oa.iam.abac.enabled:false}") boolean abacEnabled) {
+                                     @Value("${oa.iam.abac.enabled:false}") boolean abacEnabled,
+                                     @Value("${oa.iam.cache.legacy-epoch-fence-enabled:${OA_IAM_LEGACY_EPOCH_FENCE_ENABLED:true}}")
+                                     boolean legacyEpochFenceEnabled) {
         this.orgQuery = orgQuery;
         this.grantMapper = grantMapper;
         this.roleMapper = roleMapper;
@@ -56,12 +59,15 @@ public class PermissionSnapshotBuilder {
         this.json = json;
         this.ttlMs = ttlMs;
         this.abacEnabled = abacEnabled;
+        this.legacyEpochFenceEnabled = legacyEpochFenceEnabled;
     }
 
     public PermissionSnapshot build(String userId) {
         long t0 = System.nanoTime();
         // 先读版本再读数据：反过来会把旧数据打上新版本号，导致快照永久陈旧（组织树缓存同理）
-        long epoch = versionMapper.currentEpoch();
+        long tenantId = TenantContext.get();
+        long epoch = versionMapper.currentEpoch(tenantId);
+        if (legacyEpochFenceEnabled) epoch = Math.max(epoch, versionMapper.currentLegacyEpoch());
         long userVersion = versionMapper.userVersion(userId);
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -97,7 +103,6 @@ public class PermissionSnapshotBuilder {
             groupIds.add(String.valueOf(id));
         }
 
-        long tenantId = TenantContext.get();
         List<GrantRecord> grants = grantMapper.selectApplicable(tenantId, userId, orgSubjects, positionIds, groupIds, now);
 
         PermissionSnapshot.Builder sb = PermissionSnapshot.builder(userId)

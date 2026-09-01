@@ -15,11 +15,29 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface PermVersionMapper {
 
-    @Select("SELECT epoch FROM oa_iam.perm_epoch WHERE id = 1")
-    long currentEpoch();
+    @Select("""
+            SELECT coalesce((SELECT epoch FROM oa_iam.tenant_perm_epoch WHERE tenant_id=#{tenantId}), 0)
+            """)
+    long currentEpoch(@Param("tenantId") long tenantId);
 
-    @Update("UPDATE oa_iam.perm_epoch SET epoch = epoch + 1, updated_at = now() WHERE id = 1")
-    int bumpEpoch();
+    @Select("SELECT epoch FROM oa_iam.perm_epoch WHERE id=1")
+    long currentLegacyEpoch();
+
+    /**
+     * Advances both versions atomically. The legacy singleton remains a rolling-deployment fence:
+     * old nodes poll it and therefore still reject stale snapshots while versions are mixed.
+     */
+    @Select("""
+            WITH legacy AS (
+                UPDATE oa_iam.perm_epoch SET epoch=epoch+1, updated_at=now() WHERE id=1 RETURNING epoch
+            )
+            INSERT INTO oa_iam.tenant_perm_epoch(tenant_id, epoch)
+            VALUES (#{tenantId}, 1)
+            ON CONFLICT (tenant_id) DO UPDATE
+                SET epoch=oa_iam.tenant_perm_epoch.epoch+1, updated_at=now()
+            RETURNING epoch
+            """)
+    long bumpEpoch(@Param("tenantId") long tenantId);
 
     @Select("SELECT coalesce((SELECT version FROM oa_iam.perm_user_version WHERE user_id = #{userId}), 0)")
     long userVersion(@Param("userId") String userId);

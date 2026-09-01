@@ -14,7 +14,7 @@
 - 用户首次发出已认证请求时，后端按 `L1 Caffeine -> L2 Redis -> L3 DB 重算` 获取权限快照。
 - 对 `/api/v1/me/permissions` 而言，通常是 `PermVersionHeaderFilter` 在进入 Controller 前首次
   调用 `PermissionEngine.snapshot(userId)`，因此 Controller 随后的读取会命中 L1。
-- L2 Redis 使用 `oa:perm:snap:{userId}`，已有快照可以跨应用进程重启复用，但应用不会在启动时
+- L2 Redis 使用 `oa:perm:snap:{tenantId}:{userId}`，已有快照可以跨应用进程重启复用，但应用不会在启动时
   扫描 Redis 并装入 L1。
 
 ## 2. Console 用户首次进入
@@ -169,10 +169,10 @@ PermissionEngine.snapshot(userId)
 
 ```text
 snapshot(userId)
-  -> epoch()：全局 epoch 本地缓存最多 1 秒
-  -> L1 Caffeine[userId]
+  -> epoch(tenantId)：租户 epoch 本地缓存最多 1 秒
+  -> L1 Caffeine[tenantId, userId]
        命中且 epoch / ABAC 模式 / expireAt 有效 -> 返回
-  -> L2 Redis["oa:perm:snap:" + userId]
+  -> L2 Redis["oa:perm:snap:" + tenantId + ":" + userId]
        命中且有效 -> 回填 L1 -> 返回
   -> L3 PermissionSnapshotBuilder.build(userId)
        -> 回填 L1
@@ -182,7 +182,7 @@ snapshot(userId)
 
 ### 4.1 L1 Caffeine
 
-- Key：`userId`
+- Key：`(tenantId, userId)`
 - 默认最大条数：20,000
 - 默认写入后 TTL：300,000 ms
 - 进程内缓存，应用重启即清空
@@ -190,7 +190,7 @@ snapshot(userId)
 
 ### 4.2 L2 Redis
 
-- Key：`oa:perm:snap:{userId}`
+- Key：`oa:perm:snap:{tenantId}:{userId}`
 - 默认 TTL：1,800 秒
 - 通过 `SnapshotCodec` 序列化完整权限快照
 - 实际 Redis TTL 不会超过快照自己的 `expireAt`
@@ -202,7 +202,7 @@ L1、L2 都未命中或无效时，进入
 `oa-iam/src/main/java/com/lrj/oa/iam/application/PermissionSnapshotBuilder.java:61`：
 
 ```text
-读取 perm_epoch 和用户版本
+读取 tenant_perm_epoch（滚动升级期同时读取 legacy perm_epoch）和用户版本
   -> 读取用户有效任职
   -> 从 OrgTreeCache 读取组织祖先和路径前缀
   -> 读取有效用户组
@@ -217,7 +217,7 @@ L1、L2 都未命中或无效时，进入
 
 主要真值表包括：
 
-- `oa_iam.perm_epoch`
+- `oa_iam.tenant_perm_epoch`（V18 滚动升级期间兼容读取 `oa_iam.perm_epoch`）
 - `oa_iam.perm_user_version`
 - 员工与任职相关表
 - `oa_iam.user_group`、`oa_iam.user_group_member`
@@ -227,7 +227,7 @@ L1、L2 都未命中或无效时，进入
 - `oa_iam.delegation`
 
 `role_inherit_edge` 是在线角色管理的写侧直接关系，不进入用户快照重算热路径。角色变更事务会先由它
-重建 ACTIVE-only 的 `role_inherit` 闭包并推进全局权限纪元，之后用户首次访问才按新闭包懒重算快照。
+重建 ACTIVE-only 的 `role_inherit` 闭包并推进租户权限纪元，之后用户首次访问才按新闭包懒重算快照。
 
 临时授权或用户组成员关系存在更早的生效/到期边界时，快照 `expireAt` 会提前，不能简单沿用默认
 5 分钟 TTL。
@@ -286,16 +286,16 @@ Redis L2，也可能进入 L3 重算。
 
 ```text
 只影响一个用户
-  -> bump userVersion + evictLocal(userId)：删除本节点 L1 + Redis L2
-     （不同写侧的两个本地操作顺序不同，但都会在广播前完成）
+  -> 事务内 bump userVersion
+  -> commit 后 evictLocal(tenantId,userId)：删除本节点 L1 + Redis L2
   -> Redis Pub/Sub PERM_USER
-  -> 其他节点删除该用户 L1/L2
+  -> 其他节点删除该用户 L1（共享 L2 已由写节点删除）
 
-可能收回全员权限
-  -> bump 全局 epoch
-  -> evictAllLocal()：清空本节点 L1，并强制下次重读 epoch
-  -> Redis Pub/Sub PERM_EPOCH
-  -> 其他节点清空 L1并重载 PermissionCatalog
+可能收回租户内多人权限
+  -> 事务内 bump tenant epoch（滚动升级期也 bump legacy epoch）
+  -> commit 后 evictTenant(tenantId,epoch)
+  -> Redis Pub/Sub PERM_EPOCH，key 携带版本化 tenantId/epoch/eventId/reason
+  -> 其他节点只清该租户 L1；L2 因 epoch 不匹配被拒绝并懒覆盖
 ```
 
 Redis Pub/Sub 频道为 `oa:cache:invalidate`。监听处理位于
@@ -304,6 +304,10 @@ Redis Pub/Sub 频道为 `oa:cache:invalidate`。监听处理位于
 
 组织树变化使用 `ORG_TREE` 通知，同时会令用户权限快照失效；组织路径和组织授权变化后，下一次
 请求重新走同一条懒预热路径。
+
+角色写入还会在同一数据库事务追加 `oa_iam.iam_outbox`。`oa-app` 以单条租约获取事件并投递
+`iam.role.changed.v1`；失败指数退避，最多十次后进入 `FAILED`。这条 Kafka 链路服务审计/集成，
+不会替代 epoch 或 Redis 失效。
 
 ### 6.2 Console 刷新
 
@@ -397,7 +401,8 @@ GET /api/v1/iam/role-admin           -> 可选的继承角色列表
 PUT /api/v1/iam/role-admin/{roleId}/permissions
 ```
 
-服务端以乐观锁版本保护更新，先替换该角色的 `role_permission`，再推进全局权限纪元并广播失效。
+服务端以乐观锁版本保护更新，先替换该角色的 `role_permission`，再推进租户权限纪元、写 Outbox，
+提交后广播失效。
 因此已经在线的用户不会继续永久使用旧角色矩阵；其下一次权限快照读取会按新矩阵回源或重算。
 
 ### 9.2 用户运行时如何通过角色获得权限

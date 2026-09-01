@@ -124,6 +124,7 @@ services:
       OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
       OA_DATA_SCOPE_STRICT: ${OA_DATA_SCOPE_STRICT:-true}
       OA_IAM_ABAC_ENABLED: ${OA_IAM_ABAC_ENABLED:-false}
+      OA_IAM_LEGACY_EPOCH_FENCE_ENABLED: ${OA_IAM_LEGACY_EPOCH_FENCE_ENABLED:-true}
       OA_SECURITY_MODE: ${OA_SECURITY_MODE:-JWT}
       OA_JWT_JWKS: ${OA_JWT_JWKS:-http://host.docker.internal:8000/.well-known/jwks}
       OA_JWT_ISSUER: ${OA_JWT_ISSUER:-http://localhost:8000}
@@ -162,6 +163,7 @@ services:
       # ⚠️ 通知服务内嵌判权引擎，敏感字段解密要用同一把密钥；不注入就是仓库里写死的开发默认值
       OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
       OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_IAM_LEGACY_EPOCH_FENCE_ENABLED: ${OA_IAM_LEGACY_EPOCH_FENCE_ENABLED:-true}
       OA_SECURITY_MODE: ${OA_SECURITY_MODE:-JWT}
       OA_JWT_JWKS: ${OA_JWT_JWKS:-http://host.docker.internal:8000/.well-known/jwks}
       OA_JWT_ISSUER: ${OA_JWT_ISSUER:-http://localhost:8000}
@@ -208,6 +210,7 @@ services:
       OA_REDIS_PORT: 6379
       OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
       OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_IAM_LEGACY_EPOCH_FENCE_ENABLED: ${OA_IAM_LEGACY_EPOCH_FENCE_ENABLED:-true}
       OA_SECURITY_MODE: ${OA_SECURITY_MODE:-JWT}
       OA_JWT_JWKS: ${OA_JWT_JWKS:-http://host.docker.internal:8000/.well-known/jwks}
       OA_JWT_ISSUER: ${OA_JWT_ISSUER:-http://localhost:8000}
@@ -245,6 +248,7 @@ services:
       OA_PG_PASSWORD: ${OA_PG_PASSWORD:-oa_dev_pwd}
       OA_CRYPTO_DATA_KEY: ${OA_CRYPTO_DATA_KEY:-}
       OA_IAM_ENFORCE: ${OA_IAM_ENFORCE:-true}
+      OA_IAM_LEGACY_EPOCH_FENCE_ENABLED: ${OA_IAM_LEGACY_EPOCH_FENCE_ENABLED:-true}
       OA_SECURITY_MODE: ${OA_SECURITY_MODE:-JWT}
       OA_JWT_JWKS: ${OA_JWT_JWKS:-http://host.docker.internal:8000/.well-known/jwks}
       OA_JWT_ISSUER: ${OA_JWT_ISSUER:-http://localhost:8000}

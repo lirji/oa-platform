@@ -39,10 +39,12 @@
 | 表 | 职责 | 写入约束 |
 |---|---|---|
 | `role` | 角色基本信息、类型、状态、默认数据范围与乐观锁版本 | 在线只创建 `CUSTOM`；编码不可变；删除为软删除 |
-| `role_permission` | 角色直接拥有的权限点 | 更新矩阵后推进全局权限纪元 |
+| `role_permission` | 角色直接拥有的权限点 | 更新矩阵后推进租户权限纪元 |
 | `role_inherit_edge` | 管理员配置的直接继承边，是继承关系的写侧真值 | V16 新增；租户锁内校验防环 |
 | `role_inherit` | 从直接边重建的 ACTIVE-only 传递闭包，服务判权读路径 | 不作为管理端直接编辑对象 |
 | `grant_record` | 用户、组织、岗位、用户组到角色的授权记录及历史 | 非 ACTIVE 角色禁止新增授权 |
+| `tenant_perm_epoch` | 每租户权限快照失效版本 | V18 新增；数据库真值，Redis 只做加速通知 |
+| `iam_outbox` | 角色领域事件事务发件箱 | 与角色真值和 epoch 同事务；Kafka 失败异步重试 |
 
 V16 会从已有 `role_inherit.distance = 1` 关系回填直接边，不删除或改写既有业务表。部署时应先让
 `oa-app` 完成 Flyway，再检查 `flyway_schema_history` 中 V16 成功；回退应用版本时保留附加表，
@@ -89,7 +91,9 @@ MinIO 仅由 `oa-file-service` 使用：
 
 ### 3.1 Kafka
 
-Kafka 当前的明确生产代码位于 `oa-flow`：事务内先写入 `oa_flow.oa_outbox`，后台发布器再通过 `KafkaTemplate` 投递，避免数据库提交成功但消息丢失。
+Kafka 生产链路包括：`oa-flow` 通过 `oa_flow.oa_outbox` 投递流程命令，IAM 通过
+`oa_iam.iam_outbox` 投递 `iam.role.changed.v1`。两者都先同事务写 Outbox，再由后台发布器发送，
+避免业务提交成功但事件丢失。权限 L1 失效仍使用 Redis Pub/Sub，Kafka 不是判权正确性边界。
 
 平台存在两类 Kafka 地址：
 

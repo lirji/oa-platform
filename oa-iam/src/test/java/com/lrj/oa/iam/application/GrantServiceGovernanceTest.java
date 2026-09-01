@@ -1,7 +1,6 @@
 package com.lrj.oa.iam.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lrj.oa.common.cache.InvalidationBus;
 import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.iam.application.command.IamCommands;
 import com.lrj.oa.iam.domain.GrantRecord;
@@ -13,7 +12,6 @@ import com.lrj.oa.security.context.UserContextHolder;
 import com.lrj.oa.security.port.DataScopeAccessChecker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.OffsetDateTime;
@@ -30,10 +28,9 @@ class GrantServiceGovernanceTest {
     private final PermissionEngine engine = mock(PermissionEngine.class);
     private final DataScopeAccessChecker dataScope = mock(DataScopeAccessChecker.class);
     private final GrantReferenceMapper references = mock(GrantReferenceMapper.class);
-    @SuppressWarnings("unchecked")
-    private final ObjectProvider<InvalidationBus> buses = mock(ObjectProvider.class);
+    private final IamInvalidationService invalidation = mock(IamInvalidationService.class);
     private final GrantService service = new GrantService(grants, roles, mock(DelegationMapper.class),
-            mock(PermVersionMapper.class), engine, buses, new ObjectMapper(), mock(JdbcTemplate.class),
+            engine, invalidation, new ObjectMapper(), mock(JdbcTemplate.class),
             mock(UserGroupMapper.class), references, dataScope, requests, 8);
 
     @AfterEach void clear() { UserContextHolder.clear(); }

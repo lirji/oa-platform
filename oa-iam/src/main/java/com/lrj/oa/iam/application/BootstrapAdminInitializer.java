@@ -4,9 +4,7 @@ import com.lrj.oa.iam.domain.GrantRecord;
 import com.lrj.oa.iam.domain.GrantType;
 import com.lrj.oa.iam.domain.SubjectType;
 import com.lrj.oa.iam.infrastructure.mapper.GrantMapper;
-import com.lrj.oa.iam.infrastructure.mapper.PermVersionMapper;
 import com.lrj.oa.iam.infrastructure.mapper.RoleMapper;
-import com.lrj.oa.iam.infrastructure.cache.PermissionEngine;
 import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.iam.domain.Role;
 import org.slf4j.Logger;
@@ -37,17 +35,15 @@ public class BootstrapAdminInitializer implements ApplicationRunner {
 
     private final GrantMapper grantMapper;
     private final RoleMapper roleMapper;
-    private final PermVersionMapper versionMapper;
-    private final PermissionEngine engine;
+    private final IamInvalidationService invalidation;
     private final String bootstrapUserId;
 
     public BootstrapAdminInitializer(GrantMapper grantMapper, RoleMapper roleMapper,
-                                     PermVersionMapper versionMapper, PermissionEngine engine,
+                                     IamInvalidationService invalidation,
                                      @Value("${oa.iam.bootstrap-admin-user-id:}") String bootstrapUserId) {
         this.grantMapper = grantMapper;
         this.roleMapper = roleMapper;
-        this.versionMapper = versionMapper;
-        this.engine = engine;
+        this.invalidation = invalidation;
         this.bootstrapUserId = bootstrapUserId;
     }
 
@@ -84,12 +80,8 @@ public class BootstrapAdminInitializer implements ApplicationRunner {
         g.setGrantedBy("system");
         g.setGrantedAt(OffsetDateTime.now());
         grantMapper.insert(g);
-        versionMapper.bumpEpoch();
-        // ★ 必须连带本地失效：ApplicationRunner 跑在 Web 服务器启动【之后】，
-        // 这段时间里已经可能有请求把"该用户无权限"的空快照缓存住了。
-        // 只 bump 数据库 epoch 不够 —— 本地 epoch 有 1 秒缓存窗口，
-        // 窗口内那份空快照仍会被当成有效，表现为"引导明明成功了，管理员却还是 403"。
-        engine.evictAllLocal();
+        // ApplicationRunner starts after the web server; after-commit invalidation also removes any early empty snapshot.
+        invalidation.all("bootstrap-admin#" + bootstrapUserId);
 
         log.warn("★ 已为初始管理员 {} 授予 SUPER_ADMIN（授权 id={}）。初始化完成后请清空该配置。",
                 bootstrapUserId, g.getId());

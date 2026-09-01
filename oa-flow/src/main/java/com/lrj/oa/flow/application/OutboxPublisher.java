@@ -42,6 +42,7 @@ public class OutboxPublisher {
     private final AtomicLong failed = new AtomicLong();
 
     public OutboxPublisher(OutboxMapper outboxMapper,
+                           @Qualifier("oaEventKafkaTemplate")
                            ObjectProvider<KafkaTemplate<String, String>> kafkaProvider,
                            @Qualifier("workflowCommandKafkaTemplate")
                            ObjectProvider<KafkaTemplate<String, String>> workflowKafkaProvider,

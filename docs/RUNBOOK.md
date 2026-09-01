@@ -124,6 +124,11 @@ OA_BUILD_RUN_TESTS=true OA_DOCKER_PULL=true OA_DOCKER_NO_CACHE=true bash deploy/
 `GET /api/v1/flow/admin/status`：`pending` 持续增长且 `failed` 上升 → Kafka 不可达。
 `dead > 0` → 某条消息重试 10 次仍失败，查 `oa_flow.oa_outbox.last_error`。
 
+IAM 角色事件查看 `oa_iam.iam_outbox`，并监控 `oa_iam_outbox_pending`、
+`oa_iam_outbox_dead`、`oa_iam_outbox_failed_total`。Kafka 不可用时角色变更仍会提交，事件保留并重试；
+不得通过清表“解决”堆积。先核对事件 topic 是 `iam.role.changed.v1`，生产者使用 `OA_KAFKA`，而不是
+`OA_WORKFLOW_KAFKA`。
+
 ### 「JWT 登录后仍 401 / WebSocket 连不上」
 
 - 解码 token 检查 `iss`、`aud`、`sub`，它们必须分别匹配 `OA_JWT_ISSUER`、
@@ -245,6 +250,19 @@ Phase 3 覆盖 PC 契约、当前 107 条单测、50 条浏览器 E2E、镜像�
 3. 应用异常时可回退前后端镜像；旧代码继续读取 `role_inherit`。保留 V16 新表，不执行 `DROP TABLE`。
    已产生的角色业务变更按审计记录做反向管理操作，不能用数据库回滚覆盖后续授权数据。
 
+### V18 租户权限纪元与 IAM 事件发布
+
+1. 发布前在 OA Kafka 集群预创建 `iam.role.changed.v1`，分区数、副本数、保留期按平台业务事件规范设置；
+   生产环境不得依赖 broker 自动建主题。本地 Compose 的自动建主题只用于开发与验收。
+2. 第一阶段保持所有服务 `OA_IAM_LEGACY_EPOCH_FENCE_ENABLED=true`，先部署 `oa-app` 使 Flyway V18
+   创建并回填 `tenant_perm_epoch` 和 `iam_outbox`，再滚动升级其它内嵌判权引擎的服务。
+3. 混合版本阶段新代码同时推进租户 epoch 与旧全局 epoch；新节点也读取两者最大值。因此旧节点写入、
+   Pub/Sub 丢失时仍能在 1 秒内收敛，代价是这一阶段仍可能全局失效。
+4. 确认所有节点均为 V18+、`oa_perm_mismatch_total=0`、IAM Outbox 无异常堆积后，将所有服务的
+   `OA_IAM_LEGACY_EPOCH_FENCE_ENABLED=false` 并滚动重启，正式启用租户级失效范围。
+5. 回退旧镜像时重新设为 `true`。V18 是附加迁移，保留两张新表；旧代码继续读取 `perm_epoch`，
+   不得删除 `tenant_perm_epoch` 或 `iam_outbox`。
+
 ### 权限加固与 JIT 四眼审批发布
 
 1. 先部署后端并确认 Flyway V17、报表 V83 成功，再部署控制台；不要删除既有 Redis 数据，快照 codec
@@ -284,6 +302,7 @@ RBAC、接口权限、数据权限、字段权限和当前迁移边界见
 - [ ] `OA_ORG_SEED_ENABLED=false`（万人级装载接口必须关）
 - [ ] `OA_BOOTSTRAP_ADMIN` 初始化完成后清空
 - [ ] 影子校验跑满 2 周且 `oa_perm_mismatch_total` 恒为 0 后再考虑关闭
+- [ ] V18 全节点升级完成后统一关闭 `OA_IAM_LEGACY_EPOCH_FENCE_ENABLED`，并监控 IAM Outbox 指标
 - [ ] 配置生产调度触发 `oa-job-service` 的考勤日结与 `punch_record` 分区滚动
 - [x] 越权 / IDOR 渗透用例（Phase 8）
 - [ ] 在目标生产容量与真实网关/TLS 下复跑 JWT、WS 和全链路压测

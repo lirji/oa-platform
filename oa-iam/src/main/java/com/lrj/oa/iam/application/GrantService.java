@@ -2,8 +2,6 @@ package com.lrj.oa.iam.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lrj.oa.common.api.ResultCode;
-import com.lrj.oa.common.cache.CacheInvalidation;
-import com.lrj.oa.common.cache.InvalidationBus;
 import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.iam.application.command.IamCommands;
@@ -16,7 +14,6 @@ import com.lrj.oa.security.port.DataScopeAccessChecker;
 import com.lrj.oa.security.annotation.ObjectScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,8 +27,8 @@ import java.util.Set;
  *
  * <p><b>失效策略的不对称（安全设计，别改成对称的）</b>：
  * <ul>
- *   <li><b>收权 → bump 全局 epoch</b>：撤销、部门级授权变更、角色权限变更。
- *       各节点 1 秒内全量作废。代价是一次全量重算，换的是"撤权立即生效"这个安全底线。</li>
+ *   <li><b>收权 → bump 租户 epoch</b>：撤销、部门级授权变更、角色权限变更。
+ *       各节点 1 秒内作废该租户。代价是租户内懒重算，换的是"撤权立即生效"这个安全底线。</li>
  *   <li><b>给个人加权 → 只 bump 用户版本 + 本节点剔除 + 通知其它节点</b>。
  *       通知丢了最坏是新权限晚几分钟生效 —— 不构成安全问题。</li>
  * </ul>
@@ -44,9 +41,8 @@ public class GrantService {
     private final GrantMapper grantMapper;
     private final RoleMapper roleMapper;
     private final DelegationMapper delegationMapper;
-    private final PermVersionMapper versionMapper;
     private final PermissionEngine engine;
-    private final InvalidationBus bus;
+    private final IamInvalidationService invalidation;
     private final ObjectMapper json;
     private final int maxElevationHours;
     private final UserGroupMapper userGroupMapper;
@@ -57,8 +53,7 @@ public class GrantService {
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public GrantService(GrantMapper grantMapper, RoleMapper roleMapper, DelegationMapper delegationMapper,
-                        PermVersionMapper versionMapper, PermissionEngine engine,
-                        ObjectProvider<InvalidationBus> busProvider, ObjectMapper json,
+                        PermissionEngine engine, IamInvalidationService invalidation, ObjectMapper json,
                         org.springframework.jdbc.core.JdbcTemplate jdbc, UserGroupMapper userGroupMapper,
                         GrantReferenceMapper references, DataScopeAccessChecker dataScope,
                         ElevationRequestMapper elevationRequests,
@@ -67,9 +62,8 @@ public class GrantService {
         this.grantMapper = grantMapper;
         this.roleMapper = roleMapper;
         this.delegationMapper = delegationMapper;
-        this.versionMapper = versionMapper;
         this.engine = engine;
-        this.bus = busProvider.getIfAvailable();
+        this.invalidation = invalidation;
         this.json = json;
         this.maxElevationHours = maxElevationHours;
         this.userGroupMapper = userGroupMapper;
@@ -180,7 +174,7 @@ public class GrantService {
         if (grantMapper.revoke(TenantContext.get(), grantId, currentUser(), reason) == 0) {
             throw BusinessException.of(ResultCode.CONFLICT, "该授权已被撤销");
         }
-        // ★ 收权一律走全局 epoch：宁可全量重算，也不能让撤销延迟生效
+        // ★ 收权一律走租户 epoch：宁可租户内重算，也不能让撤销延迟生效
         bumpEpochAndBroadcast("revoke#" + grantId);
         log.info("撤销授权 id={} 主体={}:{} 原因={}", grantId, g.getSubjectType(), g.getSubjectId(), reason);
     }
@@ -256,9 +250,7 @@ public class GrantService {
                 blankToNull(decisionReason), g.getId()) == 0) {
             throw BusinessException.of(ResultCode.CONFLICT, "提权申请已被并发处理");
         }
-        engine.evictLocal(request.requesterId);
-        versionMapper.bumpUserVersion(request.requesterId);
-        publish(CacheInvalidation.TYPE_PERM_USER, request.requesterId);
+        invalidation.user(request.requesterId, "elevation-approved#" + requestId);
         log.warn("★ JIT 提权已批准 request={} grant={} requester={} approver={} validTo={}",
                 requestId, g.getId(), request.requesterId, approver, g.getValidTo());
         return g.getId();
@@ -348,9 +340,7 @@ public class GrantService {
         delegationMapper.insert(d);
 
         // 代理关系写在被代理人的快照里，所以要剔除【代理人】的缓存
-        engine.evictLocal(cmd.delegateeUserId());
-        versionMapper.bumpUserVersion(cmd.delegateeUserId());
-        publish(CacheInvalidation.TYPE_PERM_USER, cmd.delegateeUserId());
+        invalidation.user(cmd.delegateeUserId(), "delegation-created#" + d.getId());
         log.info("委托 {} -> {} 至 {}", delegatorUserId, cmd.delegateeUserId(), cmd.validTo());
         return d.getId();
     }
@@ -360,7 +350,7 @@ public class GrantService {
         Delegation d = delegationMapper.selectById(id);
         if (d == null) throw BusinessException.of(ResultCode.NOT_FOUND, "委托不存在: " + id);
         delegationMapper.revoke(TenantContext.get(), id);
-        // 收回代理也是"收权"，走全局 epoch
+        // 收回代理也是"收权"，走租户 epoch
         bumpEpochAndBroadcast("revokeDelegation#" + id);
     }
 
@@ -389,9 +379,7 @@ public class GrantService {
 
     private void afterGrantChange(SubjectType subjectType, String subjectId, String reason) {
         if (subjectType == SubjectType.USER) {
-            engine.evictLocal(subjectId);
-            versionMapper.bumpUserVersion(subjectId);
-            publish(CacheInvalidation.TYPE_PERM_USER, subjectId);
+            invalidation.user(subjectId, reason);
         } else {
             // 部门/岗位授权影响的人可能成千上万，逐个失效既慢又容易漏 —— 直接走全局
             bumpEpochAndBroadcast(reason);
@@ -399,14 +387,8 @@ public class GrantService {
     }
 
     private void bumpEpochAndBroadcast(String reason) {
-        versionMapper.bumpEpoch();
-        engine.evictAllLocal();
-        publish(CacheInvalidation.TYPE_PERM_EPOCH, "");
-        log.info("权限全局纪元已推进（{}），各节点将在 1 秒内作废全部快照", reason);
-    }
-
-    private void publish(String type, String key) {
-        if (bus != null) bus.publish(type, key);
+        invalidation.all(reason);
+        log.info("租户权限纪元已推进（{}），各节点将在 1 秒内作废该租户快照", reason);
     }
 
     private String writeJson(Object v) {

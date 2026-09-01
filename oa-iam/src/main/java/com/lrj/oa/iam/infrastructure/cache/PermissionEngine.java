@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.lrj.oa.common.cache.CacheInvalidation;
+import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.iam.application.PermissionCatalog;
 import com.lrj.oa.iam.application.PermissionSnapshotBuilder;
+import com.lrj.oa.iam.domain.PermissionEpochInvalidation;
 import com.lrj.oa.iam.domain.PermissionSnapshot;
 import com.lrj.oa.iam.infrastructure.mapper.PermVersionMapper;
 import com.lrj.oa.security.model.DataScopeRule;
@@ -34,12 +36,12 @@ import jakarta.annotation.PreDestroy;
  *
  * <p><b>失效策略里有一个刻意的不对称设计</b>：
  * <ul>
- *   <li><b>收权（撤销、改角色权限、组织调整）走全局 epoch</b> —— 各节点 1 秒内全部作废，
- *       安全优先，哪怕代价是一次全量重算；</li>
+ *   <li><b>收权（撤销、改角色权限、组织调整）走租户 epoch</b> —— 各节点 1 秒内作废该租户，
+ *       安全优先，避免无关租户一起冷启动；</li>
  *   <li><b>授权（给某人加角色）只 bump 用户版本 + 本节点直接剔除 + 通知其它节点</b> ——
  *       即使通知丢了，最坏也只是新权限晚几分钟生效，<b>不构成安全问题</b>。</li>
  * </ul>
- * 这样热路径只需比对一个每秒刷新一次的全局 epoch，而不必为每个请求查一次用户版本。
+ * 这样热路径只需比对一个每秒刷新一次的租户 epoch，而不必为每个请求查一次用户版本。
  */
 @Component
 public class PermissionEngine implements PermissionChecker {
@@ -57,13 +59,17 @@ public class PermissionEngine implements PermissionChecker {
     private final boolean shadowEnabled;
     private final double shadowRate;
     private final boolean abacEnabled;
+    private final boolean legacyEpochFenceEnabled;
 
-    private final Cache<String, PermissionSnapshot> l1;
+    private final Cache<TenantUserKey, PermissionSnapshot> l1;
 
-    /** 全局 epoch 的本地副本，最多陈旧 1 秒 —— 这 1 秒就是"收权生效"的延迟上界。 */
-    private volatile long cachedEpoch = -1;
-    private volatile long cachedEpochAt = 0;
+    /** 每租户 epoch 的本地副本，最多陈旧 1 秒；无锁回源避免在虚拟线程上 pin 载体线程。 */
+    private final ConcurrentMap<Long, CachedEpoch> cachedEpochs = new ConcurrentHashMap<>();
+    private volatile CachedEpoch cachedLegacyEpoch;
     private static final long EPOCH_REFRESH_MS = 1000;
+
+    private record TenantUserKey(long tenantId, String userId) { }
+    private record CachedEpoch(long value, long readAt) { }
 
     private final AtomicLong l1Hits = new AtomicLong();
     private final AtomicLong l2Hits = new AtomicLong();
@@ -91,7 +97,9 @@ public class PermissionEngine implements PermissionChecker {
                             @Value("${oa.iam.cache.l2-ttl-seconds:1800}") long l2TtlSeconds,
                             @Value("${oa.iam.shadow-verify.enabled:false}") boolean shadowEnabled,
                             @Value("${oa.iam.shadow-verify.sample-rate:0.01}") double shadowRate,
-                            @Value("${oa.iam.abac.enabled:false}") boolean abacEnabled) {
+                            @Value("${oa.iam.abac.enabled:false}") boolean abacEnabled,
+                            @Value("${oa.iam.cache.legacy-epoch-fence-enabled:${OA_IAM_LEGACY_EPOCH_FENCE_ENABLED:true}}")
+                            boolean legacyEpochFenceEnabled) {
         this.builder = builder;
         this.catalog = catalog;
         this.versionMapper = versionMapper;
@@ -102,6 +110,7 @@ public class PermissionEngine implements PermissionChecker {
         this.shadowEnabled = shadowEnabled;
         this.shadowRate = shadowRate;
         this.abacEnabled = abacEnabled;
+        this.legacyEpochFenceEnabled = legacyEpochFenceEnabled;
         this.l1 = Caffeine.newBuilder()
                 .maximumSize(l1MaxSize)
                 .expireAfterWrite(Duration.ofMillis(ttlMs))
@@ -178,16 +187,18 @@ public class PermissionEngine implements PermissionChecker {
 
     /** 取快照。热路径入口。 */
     public PermissionSnapshot snapshot(String userId) {
-        long epoch = epoch();
+        long tenantId = TenantContext.get();
+        TenantUserKey key = new TenantUserKey(tenantId, userId);
+        long epoch = epoch(tenantId);
         long now = System.currentTimeMillis();
 
-        PermissionSnapshot s = l1.getIfPresent(userId);
+        PermissionSnapshot s = l1.getIfPresent(key);
         if (fresh(s, epoch, now)) { l1Hits.incrementAndGet(); return s; }
 
         if (l2Enabled) {
-            s = readL2(userId);
+            s = readL2(tenantId, userId);
             if (fresh(s, epoch, now)) {
-                l1.put(userId, s);
+                l1.put(key, s);
                 l2Hits.incrementAndGet();
                 return s;
             }
@@ -195,8 +206,8 @@ public class PermissionEngine implements PermissionChecker {
 
         s = builder.build(userId);
         rebuilds.incrementAndGet();
-        l1.put(userId, s);
-        writeL2(s);
+        l1.put(key, s);
+        writeL2(tenantId, s);
         return s;
     }
 
@@ -204,24 +215,47 @@ public class PermissionEngine implements PermissionChecker {
         return s != null && s.epoch() == epoch && s.abacEnabled() == abacEnabled && !s.expired(now);
     }
 
-    /** 全局 epoch，本地缓存 1 秒。收到失效通知时立刻作废重取。 */
-    private long epoch() {
+    /** 租户 epoch 本地缓存 1 秒。收到失效通知时会直接推进本地已知版本。 */
+    private long epoch(long tenantId) {
         long now = System.currentTimeMillis();
-        if (cachedEpoch < 0 || now - cachedEpochAt > EPOCH_REFRESH_MS) {
-            try {
-                cachedEpoch = versionMapper.currentEpoch();
-                cachedEpochAt = now;
-            } catch (Exception e) {
-                if (cachedEpoch < 0) throw e;   // 首次就失败，没法继续
-                log.warn("读取权限 epoch 失败，沿用本地值 {}: {}", cachedEpoch, e.toString());
-            }
+        CachedEpoch cached = cachedEpochs.get(tenantId);
+        if (cached != null && now - cached.readAt() <= EPOCH_REFRESH_MS) {
+            return effectiveEpoch(cached.value(), now);
         }
-        return cachedEpoch;
+        try {
+            long fetched = versionMapper.currentEpoch(tenantId);
+            CachedEpoch resolved = cachedEpochs.compute(tenantId, (ignored, existing) ->
+                    existing != null && existing.value() > fetched
+                            ? existing : new CachedEpoch(fetched, now));
+            return effectiveEpoch(resolved.value(), now);
+        } catch (Exception e) {
+            if (cached == null) throw e;
+            log.warn("读取租户权限 epoch 失败，tenant={} 沿用本地值 {}: {}",
+                    tenantId, cached.value(), e.toString());
+            return effectiveEpoch(cached.value(), now);
+        }
     }
 
-    private PermissionSnapshot readL2(String userId) {
+    private long effectiveEpoch(long tenantEpoch, long now) {
+        if (!legacyEpochFenceEnabled) return tenantEpoch;
+        CachedEpoch legacy = cachedLegacyEpoch;
+        if (legacy == null || now - legacy.readAt() > EPOCH_REFRESH_MS) {
+            try {
+                long fetched = versionMapper.currentLegacyEpoch();
+                CachedEpoch current = cachedLegacyEpoch;
+                if (current == null || fetched >= current.value()) cachedLegacyEpoch = new CachedEpoch(fetched, now);
+                legacy = cachedLegacyEpoch;
+            } catch (Exception e) {
+                if (legacy == null) throw e;
+                log.warn("读取滚动升级兼容 epoch 失败，沿用本地值 {}: {}", legacy.value(), e.toString());
+            }
+        }
+        return Math.max(tenantEpoch, legacy.value());
+    }
+
+    private PermissionSnapshot readL2(long tenantId, String userId) {
         try {
-            String payload = redis.opsForValue().get(L2_PREFIX + userId);
+            String payload = redis.opsForValue().get(l2Key(tenantId, userId));
             return payload == null ? null : codec.decode(payload);
         } catch (Exception e) {
             log.debug("读取 L2 快照失败 user={}: {}", userId, e.toString());
@@ -229,12 +263,12 @@ public class PermissionEngine implements PermissionChecker {
         }
     }
 
-    private void writeL2(PermissionSnapshot s) {
+    private void writeL2(long tenantId, PermissionSnapshot s) {
         if (!l2Enabled) return;
         try {
             // L2 存活时间不能超过快照自身的有效期（临时授权边界可能比 TTL 更早）
             long ttl = Math.min(l2TtlSeconds, Math.max(1, (s.expireAt() - System.currentTimeMillis()) / 1000));
-            redis.opsForValue().set(L2_PREFIX + s.userId(), codec.encode(s), Duration.ofSeconds(ttl));
+            redis.opsForValue().set(l2Key(tenantId, s.userId()), codec.encode(s), Duration.ofSeconds(ttl));
         } catch (Exception e) {
             log.debug("写入 L2 快照失败 user={}: {}", s.userId(), e.toString());
         }
@@ -244,27 +278,60 @@ public class PermissionEngine implements PermissionChecker {
 
     /** 本节点立即剔除某人的缓存（L1 + L2）。调用方随后应通过总线通知其它节点。 */
     public void evictLocal(String userId) {
-        l1.invalidate(userId);
+        evictLocal(TenantContext.get(), userId);
+    }
+
+    public void evictLocal(long tenantId, String userId) {
+        l1.invalidate(new TenantUserKey(tenantId, userId));
         if (l2Enabled) {
-            try { redis.delete(L2_PREFIX + userId); } catch (Exception ignored) { }
+            try { redis.delete(l2Key(tenantId, userId)); } catch (Exception ignored) { }
         }
+    }
+
+    /** PERM_USER keeps its legacy userId payload; user IDs are global, so remote nodes evict matching L1 entries. */
+    private void evictUserAcrossTenants(String userId) {
+        l1.asMap().keySet().removeIf(key -> key.userId().equals(userId));
+    }
+
+    /** Apply only a newer tenant epoch and evict that tenant's local snapshots. L2 is rejected by epoch on read. */
+    public void evictTenant(long tenantId, long epoch) {
+        long now = System.currentTimeMillis();
+        CachedEpoch existing = cachedEpochs.get(tenantId);
+        if (existing != null && epoch <= existing.value()) return;
+        cachedEpochs.compute(tenantId, (ignored, current) ->
+                current != null && current.value() > epoch ? current : new CachedEpoch(epoch, now));
+        l1.asMap().keySet().removeIf(key -> key.tenantId() == tenantId);
     }
 
     /** 本节点全量失效。 */
     public void evictAllLocal() {
         l1.invalidateAll();
-        cachedEpochAt = 0;      // 强制下次读 epoch 时回源
+        cachedEpochs.clear();
+        cachedLegacyEpoch = null;
     }
 
     @EventListener
     public void onInvalidation(CacheInvalidation msg) {
         switch (msg.type()) {
-            case CacheInvalidation.TYPE_PERM_EPOCH, CacheInvalidation.TYPE_ORG_TREE -> {
-                log.info("收到全局权限失效通知（{}），清空本节点 L1", msg.type());
+            case CacheInvalidation.TYPE_PERM_EPOCH -> {
+                Optional<PermissionEpochInvalidation> decoded = PermissionEpochInvalidation.decode(msg.key());
+                if (decoded.isPresent()) {
+                    PermissionEpochInvalidation event = decoded.get();
+                    log.info("收到租户权限失效通知 tenant={} epoch={} reason={}",
+                            event.tenantId(), event.epoch(), event.reason());
+                    evictTenant(event.tenantId(), event.epoch());
+                } else {
+                    // Mixed-version nodes may still publish the old empty key. Conservatively invalidate all.
+                    log.info("收到旧版全局权限失效通知，清空本节点 L1");
+                    evictAllLocal();
+                }
+            }
+            case CacheInvalidation.TYPE_ORG_TREE -> {
+                log.info("收到组织树失效通知，清空本节点全部权限 L1");
                 evictAllLocal();
                 catalog.reload();
             }
-            case CacheInvalidation.TYPE_PERM_USER -> evictLocal(msg.key());
+            case CacheInvalidation.TYPE_PERM_USER -> evictUserAcrossTenants(msg.key());
             default -> { }
         }
     }
@@ -277,7 +344,9 @@ public class PermissionEngine implements PermissionChecker {
      */
     private void maybeShadowVerify(String userId, int permId, boolean cachedAnswer) {
         if (!shadowEnabled || ThreadLocalRandom.current().nextDouble() >= shadowRate) return;
+        long tenantId = TenantContext.get();
         shadowExecutor.execute(() -> {
+            TenantContext.set(tenantId);
             try {
                 shadowChecks.incrementAndGet();
                 boolean truth = builder.build(userId).has(permId);
@@ -288,6 +357,8 @@ public class PermissionEngine implements PermissionChecker {
                 }
             } catch (Exception e) {
                 log.debug("影子校验执行失败: {}", e.toString());
+            } finally {
+                TenantContext.clear();
             }
         });
     }
@@ -302,8 +373,14 @@ public class PermissionEngine implements PermissionChecker {
                 "l2Hits", l2Hits.get(),
                 "l2Enabled", l2Enabled,
                 "rebuilds", rebuilds.get(),
-                "epoch", epoch(),
+                "epoch", epoch(TenantContext.get()),
+                "cachedTenants", cachedEpochs.size(),
+                "legacyEpochFenceEnabled", legacyEpochFenceEnabled,
                 "shadowChecks", shadowChecks.get(),
                 "shadowMismatches", shadowMismatches.get());
+    }
+
+    private static String l2Key(long tenantId, String userId) {
+        return L2_PREFIX + tenantId + ":" + userId;
     }
 }

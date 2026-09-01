@@ -29,7 +29,7 @@ class PermissionSnapshotBuilderElevationTest {
         UserGroupMapper groups = mock(UserGroupMapper.class);
         PermissionConditionMapper conditions = mock(PermissionConditionMapper.class);
 
-        when(versions.currentEpoch()).thenReturn(4L);
+        when(versions.currentEpoch(1L)).thenReturn(4L);
         when(versions.userVersion("u1")).thenReturn(7L);
         when(org.activeAssignments("u1")).thenReturn(List.of(new AssignmentView(
                 1L, 2L, 10L, "华东", "/1/10/", 3L, "经理", "PRIMARY", true,
@@ -53,7 +53,7 @@ class PermissionSnapshotBuilderElevationTest {
         when(catalog.requiresElevation(9)).thenReturn(true);
 
         PermissionSnapshotBuilder builder = new PermissionSnapshotBuilder(org, grants, roles, delegations,
-                versions, catalog, groups, conditions, new ObjectMapper(), 300_000, false);
+                versions, catalog, groups, conditions, new ObjectMapper(), 300_000, false, false);
         var snapshot = builder.build("u1");
 
         assertThat(snapshot.has(9)).isTrue();

@@ -38,7 +38,7 @@ class RoleAdminServiceTest {
         verify(mapper).deleteTenantClosure(1L);
         verify(mapper).insertTenantSelfClosure(1L);
         verify(mapper).insertTenantTransitiveClosure(1L);
-        verify(invalidation).all("role-create#19");
+        verify(invalidation).roleChanged(19L, "CREATED", "role-create#19");
     }
 
     @Test
@@ -64,7 +64,7 @@ class RoleAdminServiceTest {
                 new IamCommands.ReplaceRoleInheritance(List.of(7L), 2)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("环路");
-        verify(invalidation, never()).all("role-inheritance#19");
+        verify(invalidation, never()).roleChanged(19L, "INHERITANCE_REPLACED", "role-inheritance#19");
     }
 
     @Test
@@ -94,7 +94,7 @@ class RoleAdminServiceTest {
         verify(mapper).deleteTenantClosure(1L);
         verify(mapper).insertTenantSelfClosure(1L);
         verify(mapper).insertTenantTransitiveClosure(1L);
-        verify(invalidation).all("role-status#19=false");
+        verify(invalidation).roleChanged(19L, "STATUS_CHANGED", "role-status#19=false");
     }
 
     @Test
