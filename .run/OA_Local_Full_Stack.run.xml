@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="OA Local Full Stack" type="CompoundRunConfigurationType">
+    <toRun name="OA App Local" type="SpringBootApplicationConfigurationType" />
+    <toRun name="OA Notify Local" type="SpringBootApplicationConfigurationType" />
+    <toRun name="OA File Local" type="SpringBootApplicationConfigurationType" />
+    <toRun name="OA Job Local" type="SpringBootApplicationConfigurationType" />
+    <toRun name="OA Console Dev" type="js.build_tools.npm" />
+    <toRun name="OA Mobile Dev" type="js.build_tools.npm" />
+    <method v="2" />
+  </configuration>
+</component>

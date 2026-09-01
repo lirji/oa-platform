@@ -1,0 +1,17 @@
+# 本地源码调试配置。仅在显式启用 `local` profile 时生效，默认 JWT/REMOTE 配置不变。
+oa:
+  security:
+    mode: ${OA_SECURITY_MODE:DEV}
+  org:
+    seed:
+      enabled: ${OA_ORG_SEED_ENABLED:true}
+  iam:
+    bootstrap-admin-user-id: ${OA_BOOTSTRAP_ADMIN:seed-user-1}
+  flow:
+    workflow:
+      mode: ${OA_WORKFLOW_MODE:LOCAL}
+
+# LOCAL 流程使用进程内测试替身，不初始化远程 workflow-platform SDK。
+workflow:
+  client:
+    enabled: ${OA_WORKFLOW_CLIENT_ENABLED:false}

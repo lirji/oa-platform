@@ -1,0 +1,4 @@
+# 本地源码调试配置。仅在显式启用 `local` profile 时关闭 JWT 认证。
+oa:
+  security:
+    mode: ${OA_SECURITY_MODE:DEV}
