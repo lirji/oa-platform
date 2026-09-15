@@ -13,13 +13,13 @@
 - 2026-09-15：知识库表加横向滚动、操作列固定右侧；所有者 UUID 不再 `word-break: break-all`。
 - 2026-09-15：考勤首页改为上班/下班/工时/当日状态，链路指标收到折叠区。
 - 2026-09-15：已重建并 recreate `oa-app`、`oa-console`。oa-console 121 测通过；首屏 gzip 290.4 KB / 300 KB。
-- 2026-09-15：Git 提交 `ea2a0af` 在任务分支 `feat/oa-console-pages-and-sql-fixes`（不含 `tmp/`）。auth-platform 无本任务未提交改动。
+- 2026-09-15：已发布 `origin/main` `62a346e`（任务分支 `feat/oa-console-pages-and-sql-fixes`，功能提交 `ea2a0af`）。不含 `tmp/`。auth-platform 无本任务改动。
+- 2026-09-15：远程 CI `34921197355` 已通过（PC Console / Backend / Mobile H5）。
 
 ## 未完成
 
-- 远程 GitHub Actions CI（推 origin/main 后核验）。
 - 已登录浏览器硬刷新后再点会议室、驾驶舱、知识库、考勤。
 
 ## 下一步
 
-推送任务分支并合入 `origin/main`；硬刷新 http://localhost:8404 验证四个页面。
+硬刷新 http://localhost:8404 ，打开行政→会议室、管理驾驶舱、知识库、考勤。
