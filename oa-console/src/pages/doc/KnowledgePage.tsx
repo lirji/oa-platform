@@ -51,24 +51,31 @@ export default function KnowledgePage() {
   }, [keyword, list.data])
 
   const columns: ColumnsType<KbDoc> = [
-    { title: '标题', dataIndex: 'title', render: (value) => <Typography.Text strong>{value ?? '未命名'}</Typography.Text> },
+    { title: '标题', dataIndex: 'title', ellipsis: true, render: (value) => <Typography.Text strong>{value ?? '未命名'}</Typography.Text> },
     { title: '摘要', dataIndex: 'summary', ellipsis: true, render: (value) => value || '—' },
-    { title: '所有者', dataIndex: 'ownerId', width: 180, render: (value) => <span className="mono">{value ?? '—'}</span> },
-    { title: '版本', dataIndex: 'version', width: 80, render: (value) => `v${value ?? 0}` },
     {
-      title: '更新时间', dataIndex: 'updatedAt', width: 180,
+      title: '所有者', dataIndex: 'ownerId', width: 140, ellipsis: true,
+      render: (value) => (
+        <Typography.Text ellipsis={{ tooltip: value }} style={{ width: 120, wordBreak: 'keep-all' }}>
+          {value ?? '—'}
+        </Typography.Text>
+      ),
+    },
+    { title: '版本', dataIndex: 'version', width: 72, render: (value) => `v${value ?? 0}` },
+    {
+      title: '更新时间', dataIndex: 'updatedAt', width: 168,
       render: (value) => value ? new Date(value).toLocaleString('zh-CN') : '—',
     },
     {
-      title: '操作', key: 'actions', width: perm.has('oa:kb:share') ? 190 : 90,
+      title: '操作', key: 'actions', width: perm.has('oa:kb:share') ? 168 : 88, fixed: 'right',
       render: (_, doc) => (
-        <Space>
-          <Button type="link" icon={<EyeOutlined />} onClick={() => setSelectedId(doc.id ?? null)}>查看</Button>
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setSelectedId(doc.id ?? null)}>查看</Button>
           {perm.has('oa:kb:share') && (
-            <Button type="link" icon={<QuestionCircleOutlined />} onClick={() => {
+            <Button type="link" size="small" icon={<QuestionCircleOutlined />} onClick={() => {
               setExplainUser(perm.userId ?? '')
               setExplainId(doc.id ?? null)
-            }}>访问解释</Button>
+            }}>解释</Button>
           )}
         </Space>
       ),
@@ -86,7 +93,15 @@ export default function KnowledgePage() {
         />}
       />
       <DataCard query={list} data={rows} emptyText={keyword ? '没有匹配的可见文档' : '暂无可见文档'}>
-        {(data) => <Table rowKey={(doc) => String(doc.id)} columns={columns} dataSource={data} pagination={{ pageSize: 20 }} />}
+        {(data) => (
+          <Table
+            rowKey={(doc) => String(doc.id)}
+            columns={columns}
+            dataSource={data}
+            pagination={{ pageSize: 20 }}
+            scroll={{ x: 960 }}
+          />
+        )}
       </DataCard>
 
       <Drawer title={detail.data?.title ?? '文档详情'} width={640} open={selectedId != null}

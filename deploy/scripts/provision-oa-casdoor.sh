@@ -8,16 +8,18 @@ CLIENT_ID="${OA_CASDOOR_CLIENT_ID:-oa-platform-local}"
 CLIENT_SECRET="${OA_CASDOOR_CLIENT_SECRET:-oa-platform-local-secret-2026}"
 ADMIN_USER="${CASDOOR_ADMIN:-admin}"
 ADMIN_PASSWORD="${CASDOOR_ADMIN_PW:-123}"
-BUILTIN_CLIENT_ID="${CASDOOR_BUILTIN_CLIENT_ID:-ea46d9a8033b0be2d8ed}"
 
 command -v jq >/dev/null
 command -v curl >/dev/null
 docker container inspect authz-casdoor >/dev/null 2>&1 || { echo "Casdoor 容器 authz-casdoor 未运行" >&2; exit 1; }
 docker container inspect authz-postgres >/dev/null 2>&1 || { echo "Casdoor 数据库容器 authz-postgres 未运行" >&2; exit 1; }
 
-BUILTIN_SECRET=$(docker exec authz-postgres psql -U authz -d spicedb -tAc \
-  "select client_secret from application where client_id='${BUILTIN_CLIENT_ID}'" | tr -d '[:space:]')
-[ -n "$BUILTIN_SECRET" ] || { echo "读不到 Casdoor built-in client secret" >&2; exit 1; }
+# Casdoor 首次启动会随机生成 built-in client_id，不能写死旧值。
+BUILTIN_ROW=$(docker exec authz-postgres psql -U authz -d spicedb -tAc \
+  "select client_id || chr(9) || client_secret from application where name='app-built-in' and owner='admin' limit 1")
+BUILTIN_CLIENT_ID="$(printf '%s' "${BUILTIN_ROW%%$'\t'*}" | tr -d '[:space:]')"
+BUILTIN_SECRET="$(printf '%s' "${BUILTIN_ROW#*$'\t'}" | tr -d '[:space:]')"
+[ -n "$BUILTIN_CLIENT_ID" ] && [ -n "$BUILTIN_SECRET" ] || { echo "读不到 Casdoor built-in client secret" >&2; exit 1; }
 
 ADMIN_TOKEN=$(curl -fsS -X POST "$CASDOOR/api/login/oauth/access_token" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
@@ -31,7 +33,7 @@ ADMIN_TOKEN=$(curl -fsS -X POST "$CASDOOR/api/login/oauth/access_token" \
 
 existing=$(curl -fsS "$CASDOOR/api/get-application?id=admin/$APP_NAME" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq -c '.data // empty')
-redirects='["http://localhost:5473/callback","http://127.0.0.1:5473/callback","http://localhost:8404/callback","http://127.0.0.1:8404/callback"]'
+redirects='["http://localhost:5473/callback","http://127.0.0.1:5473/callback","http://localhost:5473/login","http://127.0.0.1:5473/login","http://localhost:8404/callback","http://127.0.0.1:8404/callback","http://localhost:8404/login","http://127.0.0.1:8404/login"]'
 
 if [ -z "$existing" ]; then
   payload=$(jq -nc --arg name "$APP_NAME" --arg cid "$CLIENT_ID" --arg secret "$CLIENT_SECRET" \
@@ -53,4 +55,4 @@ verified=$(curl -fsS "$CASDOOR/api/get-application?id=admin/$APP_NAME" \
   '.data | (.clientId == $cid and (.grantTypes | index("authorization_code") != null) and (.grantTypes | index("refresh_token") != null))')
 [ "$verified" = "true" ] || { echo "Casdoor OA 应用回读校验失败" >&2; exit 1; }
 
-echo "Casdoor OA 应用已就绪：name=$APP_NAME client_id=$CLIENT_ID redirects=4"
+echo "Casdoor OA 应用已就绪：name=$APP_NAME client_id=$CLIENT_ID redirects=8"

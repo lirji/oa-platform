@@ -3,7 +3,6 @@ import { Alert, Avatar, Card, Input, Space, Tag, Typography } from 'antd'
 import { UserOutlined } from '@ant-design/icons'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { PageHeader } from '../../components/layout/PageHeader'
-import { ScopeBanner } from '../../components/common/ScopeHint'
 import { PageSkeleton, ErrorState, EmptyState } from '../../components/common/AsyncState'
 import { useDirectorySync } from '../../hooks/useDirectorySync'
 
@@ -63,9 +62,10 @@ export default function DirectoryPage() {
           data-testid="primary-action"
           value={keyword} onChange={(e) => setKeyword(e.target.value)} />}
       />
-      <ScopeBanner module="org" />
-      {sync.error && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-        message="同步失败，正在展示本地缓存" description={sync.error} />}
+      {sync.error && (
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+          message="同步失败，正在展示本地缓存" description={sync.error} />
+      )}
 
       <Card size="small" styles={{ body: { padding: 0 } }}>
         {sync.loading && sync.entries.length === 0 ? (

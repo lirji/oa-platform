@@ -14,14 +14,37 @@ import { useAppBreakpoint } from '../../hooks/useAppBreakpoint'
 import { colors } from '../../theme/colors'
 import { menuIcon } from './menuIcons'
 
+/** V13 之后才插入的菜单可能还没回填 route；不要把权限码当成路径去跳。 */
+const FALLBACK_MENU_ROUTE: Record<string, string> = {
+  'oa:menu:workbench': '/workbench',
+  'oa:menu:org': '/org',
+  'oa:menu:attendance': '/attendance',
+  'oa:menu:doc': '/doc',
+  'oa:menu:kb': '/kb',
+  'oa:menu:admin': '/admin-biz',
+  'oa:menu:notify': '/notify',
+  'oa:menu:report': '/report',
+  'oa:menu:iam': '/iam',
+}
+
+function menuRoute(n: MenuNode): string | undefined {
+  const route = n.route || FALLBACK_MENU_ROUTE[n.code]
+  return route && route.startsWith('/') ? route : undefined
+}
+
 /** 后端 menus → antd Menu items。层级与排序都来自后端。 */
 function toItems(nodes: readonly MenuNode[]): NonNullable<Parameters<typeof Menu>[0]['items']> {
-  return nodes.map((n) => ({
-    key: n.route ?? n.code,
-    icon: menuIcon(n.icon),
-    label: n.name,
-    children: n.children?.length ? toItems(n.children) : undefined,
-  }))
+  return nodes.flatMap((n) => {
+    const children = n.children?.length ? toItems(n.children) : undefined
+    const key = menuRoute(n)
+    if (!key && !children?.length) return []
+    return [{
+      key: key ?? n.code,
+      icon: menuIcon(n.icon),
+      label: n.name,
+      children,
+    }]
+  })
 }
 
 export default function AppLayout() {
@@ -45,18 +68,22 @@ export default function AppLayout() {
 
   const items = useMemo(() => toItems(perm.menus ?? []), [perm.menus])
   const current = useMemo(
-    () => flatten(perm.menus ?? []).find(
-      (n) => n.route && (location.pathname === n.route || location.pathname.startsWith(n.route + '/')),
-    ),
+    () => flatten(perm.menus ?? []).find((n) => {
+      const route = menuRoute(n)
+      return Boolean(route && (location.pathname === route || location.pathname.startsWith(`${route}/`)))
+    }),
     [perm.menus, location.pathname],
   )
 
   const menu = (afterClick?: () => void) => (
     <Menu
       mode="inline"
-      selectedKeys={[current?.route ?? location.pathname]}
+      selectedKeys={[current ? (menuRoute(current) ?? location.pathname) : location.pathname]}
       items={items}
-      onClick={(e) => { navigate(e.key); afterClick?.() }}
+      onClick={(e) => {
+        if (e.key.startsWith('/')) navigate(e.key)
+        afterClick?.()
+      }}
       style={{ borderInlineEnd: 0 }}
     />
   )

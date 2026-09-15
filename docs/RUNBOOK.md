@@ -27,8 +27,18 @@ docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps down
 pkill -f 'oa-app-.*\.jar'
 ```
 
+本地演示数据（写 PostgreSQL，幂等；JWT 登录 `admin` 后工作台/组织/知识库可看见）：
+
+```bash
+bash deploy/scripts/seed-demo-data.sh
+```
+
 默认 profile 是生产等价的 `JWT`：PC 在 `:8404`，移动端在 `:8405`。只跑传统本地冒烟时，
 必须在命令上显式写 `OA_SECURITY_MODE=DEV`；不要把 DEV 写回默认配置。
+
+数据库与中间件的**端口、账号用途、环境变量名、连接 ID** 以
+[数据库与组件清单 §7](DATABASES_AND_COMPONENTS.md) 为准。真实密码只在本机私密手册，不进 Git。
+`deploy/.env` 可覆盖 `.env.example`；以 `docker compose -p oa-platform ps` 显示的宿主端口为准。
 
 `build-images.sh` 默认从当前源码构建四个后端、PC、移动端共六个镜像。只验证某一前端时可用
 `OA_BUILD_CONSOLE=false` 或 `OA_BUILD_MOBILE=false` 跳过另一端，不能复用来源不明的旧后端 tag。

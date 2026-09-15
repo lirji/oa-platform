@@ -131,6 +131,12 @@ public final class AdminMappers {
                            @Param("startAt") OffsetDateTime startAt, @Param("endAt") OffsetDateTime endAt,
                            @Param("orgId") Long orgId, @Param("orgPath") String orgPath);
 
+        /**
+         * 列出与查询窗口重叠的预定。
+         *
+         * <p>重叠判定用上下界比较，不用 {@code tstzrange &&}：数据权限拦截器走 JSQLParser 4.6，
+         * 解析不了 PostgreSQL 的 {@code &&}。左闭右开区间重叠 ⟺ {@code lower(A) < upper(B) AND lower(B) < upper(A)}。
+         */
         @Select("""
                 SELECT b.id, b.room_id AS roomId, r.name AS roomName, b.booker_id AS bookerId,
                        b.booker_name AS bookerName, b.subject,
@@ -138,7 +144,7 @@ public final class AdminMappers {
                   FROM oa_admin.room_booking b
                   JOIN oa_admin.meeting_room r ON r.tenant_id=b.tenant_id AND r.id=b.room_id
                  WHERE b.tenant_id=#{tenantId} AND b.room_id=#{roomId} AND b.status='BOOKED'
-                   AND b.during &amp;&amp; tstzrange(#{from}, #{to}, '[)')
+                   AND lower(b.during) < #{to} AND upper(b.during) > #{from}
                  ORDER BY lower(b.during)
                 """)
         List<BookingRow> bookings(@Param("tenantId") long tenantId, @Param("roomId") long roomId,

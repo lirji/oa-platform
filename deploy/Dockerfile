@@ -1,6 +1,5 @@
-# syntax=docker/dockerfile:1
-#
 # OA Platform 运行镜像（四个可部署单元共用一份 Dockerfile，靠构建参数区分）。
+# 不写 # syntax=docker/dockerfile:1：本文件没有用到 frontend 特性，写了每次都要问 Docker Hub，本机常卡 60s。
 #
 # ⚠️ 刻意【不做】容器内 Maven 构建。原因很实在：本项目依赖的中台制品
 # （com.lrj.workflow / com.lrj.authz）装在宿主机的 system maven 仓库
@@ -20,10 +19,7 @@ LABEL org.opencontainers.image.title="oa-platform/${SERVICE}" \
       org.opencontainers.image.description="企业级 OA 协同办公平台（万人级）" \
       org.opencontainers.image.source="https://github.com/liruijun/oa-platform"
 
-# curl 用于容器健康检查；JRE 基础镜像里没有
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl tzdata \
- && rm -rf /var/lib/apt/lists/*
+# eclipse-temurin:21-jre 已带 curl/tzdata。再跑 apt-get 会打 Ubuntu 源，本机常 502 或卡满分钟。
 
 # ★ ARG 只在构建期存在，运行期就没了。健康检查是【运行期】执行的，
 # 直接写 ${APP_PORT} 会取到空值并回落到默认 8400 ——

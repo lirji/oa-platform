@@ -2,9 +2,34 @@
 // 但 loadEnv 只在 vite 里导出 —— 从 vitest/config 拿会报
 // "does not provide an export named 'loadEnv'"，且只在构建时才炸。
 import { defineConfig } from 'vitest/config'
-import { loadEnv } from 'vite'
+import { loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
+
+// 门户跨域探测专用健康端点；不走 SPA 回退。
+function healthzPlugin(): Plugin {
+  const respond = (res: { setHeader(name: string, value: string): void; end(body?: string): void; statusCode: number }) => {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Cache-Control', 'no-store')
+    res.statusCode = 204
+    res.end()
+  }
+  return {
+    name: 'oa-console-healthz',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.split('?')[0] !== '/healthz') return next()
+        respond(res)
+      })
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.split('?')[0] !== '/healthz') return next()
+        respond(res)
+      })
+    },
+  }
+}
 
 // loadEnv(mode, '.', '') —— 第三个参数留空表示不按 VITE_ 前缀过滤，
 // 这样 dev-only 的 *_TARGET 也能读到（它们只用于 proxy，不会进产物）。
@@ -20,7 +45,7 @@ export default defineConfig(({ mode }) => {
   const app = env.VITE_API_TARGET || 'http://localhost:8400'
 
   return {
-    plugins: [react()],
+    plugins: [react(), healthzPlugin()],
     resolve: {
       // 可迁移税：业务代码一律 import '@oa/shared/xxx'，
       // Phase 6 抽 workspace 时只改这里的指向，业务代码一行不动。
@@ -32,7 +57,8 @@ export default defineConfig(({ mode }) => {
       //   表现是"dev server 明明说 ready 了却连不上"。
       //   playwright.config.ts 的 baseURL 也是 127.0.0.1，两边必须一致。
       host: '127.0.0.1',
-      port: 5473,
+      // 能力门户入口默认 8404；未设 OA_CONSOLE_PORT 时仍用本机 Vite 5473。
+      port: Number(process.env.OA_CONSOLE_PORT || process.env.OA_UI_PORT || 5473),
       proxy: {
         // ⚠️ 顺序敏感：具体在前、笼统在后
         '/api/v1/notify': { target: notify, changeOrigin: true },

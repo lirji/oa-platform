@@ -37,7 +37,7 @@ build() {  # $1=service  $2=port
   jar="${jar#"$ROOT/"}"
   echo "   · $svc  <- $jar"
   docker build -q \
-    "${DOCKER_FLAGS[@]}" \
+    ${DOCKER_FLAGS[@]+"${DOCKER_FLAGS[@]}"} \
     -f "$ROOT/deploy/Dockerfile" \
     --build-arg "SERVICE=$svc" \
     --build-arg "JAR_FILE=$jar" \
@@ -54,7 +54,7 @@ build oa-job-service    8403
 if [ "${OA_BUILD_CONSOLE:-true}" = "true" ]; then
   echo "── 3/4 构建 PC 控制台镜像"
   docker build -q \
-    "${DOCKER_FLAGS[@]}" \
+    ${DOCKER_FLAGS[@]+"${DOCKER_FLAGS[@]}"} \
     -f "$ROOT/oa-console/Dockerfile" \
     --build-arg "FRONTEND_OIDC_ENABLED=${VITE_AUTH_ENABLED:-false}" \
     --build-arg "VITE_CASDOOR_AUTHORITY=${VITE_CASDOOR_AUTHORITY:-http://localhost:8000}" \
@@ -70,7 +70,7 @@ fi
 if [ "${OA_BUILD_MOBILE:-true}" = "true" ]; then
   echo "── 4/4 构建移动端镜像"
   docker build -q \
-    "${DOCKER_FLAGS[@]}" \
+    ${DOCKER_FLAGS[@]+"${DOCKER_FLAGS[@]}"} \
     -f "$ROOT/oa-mobile/Dockerfile" \
     --build-arg "FRONTEND_OIDC_ENABLED=${VITE_AUTH_ENABLED:-false}" \
     --build-arg "VITE_CASDOOR_AUTHORITY=${VITE_CASDOOR_AUTHORITY:-http://localhost:8000}" \

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { canDrop, indexTree, type TreePathNode } from './orgTree'
+import {
+  attachChildren, canDrop, collectIds, filterTree, inOrgSubtree, indexTree,
+  suggestedChildType, type TreePathNode,
+} from './orgTree'
 
 /**
  * 计划 §10 单测 5：成环判定表驱动。
@@ -61,5 +64,75 @@ describe('canDrop —— 成环预判', () => {
     ])
     expect(canDrop(2, 23, broken)).toBe(false) // ← 少了尾斜杠就会误判成禁止
     expect(canDrop(2, 23, IDX)).toBe(true)     // ← 有尾斜杠才是对的
+  })
+})
+
+describe('attachChildren', () => {
+  it('只替换目标节点的 children，兄弟不动', () => {
+    const next = attachChildren(TREE, 23, [
+      { id: 230, path: '/1/23/230/' },
+    ])
+    expect(next[0].children?.find((n) => n.id === 2)?.children).toEqual([{ id: 4, path: '/1/2/4/' }])
+    expect(next[0].children?.find((n) => n.id === 23)?.children).toEqual([{ id: 230, path: '/1/23/230/' }])
+  })
+
+  it('空 children 也写回去（懒加载证明这是叶子）', () => {
+    const next = attachChildren([{ id: 1, path: '/1/', children: [] }], 1, [])
+    expect(next[0].children).toEqual([])
+  })
+})
+
+describe('filterTree', () => {
+  interface Named extends TreePathNode {
+    name: string
+    code: string
+    children?: Named[]
+  }
+  const named: Named[] = [
+    {
+      id: 1, path: '/1/', name: '集团', code: 'G', children: [
+        { id: 2, path: '/1/2/', name: '研发', code: 'RD', children: [{ id: 4, path: '/1/2/4/', name: '后端', code: 'BE' }] },
+        { id: 23, path: '/1/23/', name: '市场', code: 'MKT' },
+      ],
+    },
+  ]
+
+  it('空关键字原样返回', () => {
+    expect(filterTree(named, '  ')).toBe(named)
+  })
+
+  it('命中叶子时保留祖先', () => {
+    const hit = filterTree(named, '后端')
+    expect(collectIds(hit)).toEqual([1, 2, 4])
+  })
+
+  it('按编码也能搜', () => {
+    expect(collectIds(filterTree(named, 'mkt'))).toEqual([1, 23])
+  })
+})
+
+describe('inOrgSubtree', () => {
+  const org = { id: 2, path: '/1/2/' }
+
+  it('本级命中', () => {
+    expect(inOrgSubtree({ orgId: 2, orgPath: '/1/2/' }, org)).toBe(true)
+  })
+
+  it('下级 path 前缀命中；id 是前缀的兄弟不命中', () => {
+    expect(inOrgSubtree({ orgId: 4, orgPath: '/1/2/4/' }, org)).toBe(true)
+    expect(inOrgSubtree({ orgId: 23, orgPath: '/1/23/' }, org)).toBe(false)
+  })
+
+  it('仅本级时下级不算', () => {
+    expect(inOrgSubtree({ orgId: 4, orgPath: '/1/2/4/' }, org, true)).toBe(false)
+  })
+})
+
+describe('suggestedChildType', () => {
+  it('按常见标签给默认下级类型', () => {
+    expect(suggestedChildType('GROUP')).toBe('COMPANY')
+    expect(suggestedChildType('DEPT')).toBe('TEAM')
+    expect(suggestedChildType('TEAM')).toBe('SQUAD')
+    expect(suggestedChildType('VIRTUAL')).toBe('TEAM')
   })
 })

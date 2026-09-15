@@ -23,6 +23,13 @@
 
 项目当前只使用一套关系型数据库：PostgreSQL。默认物理数据库名为 `oa`，业务通过 schema 隔离，没有为每个模块建立独立数据库。
 
+本地演示/测试数据必须进表，不能写死在控制台页面。两条种子互不替代：
+
+| 脚本 | 写入什么 | 适用 |
+|---|---|---|
+| `deploy/scripts/seed-demo-data.sh`（SQL：`deploy/sql/seed-demo-data.sql`） | 11 个演示组织、24 名员工，以及请假/待办/考勤/公文/知识库/会议室/资产/通知等业务行；把 Casdoor JWT `sub` 写成员工档案 | JWT 本地联调、工作台有数 |
+| `deploy/scripts/seed-console-fixture.sh` | `POST /org/seed` 万人 COPY + e2e 五账号授权 | 需 `DEV` + `OA_ORG_SEED_ENABLED`；权限沙盘/e2e |
+
 | Schema | 主要归属 | 主要数据 | 迁移来源 |
 |---|---|---|---|
 | `oa_org` | `oa-org` | 组织单元、闭包表、员工、岗位、任职、汇报线、目录同步 | `oa-org/src/main/resources/db/migration/` |
@@ -200,28 +207,112 @@ PC 端还使用 `openapi-typescript` 7.13.0 将固定的 OpenAPI 快照生成 Ty
 | `oa-console` | PC 管控台 | 5473 / 8404 |
 | `oa-mobile` | 员工移动端 H5 | 5474 / 8405 |
 
-## 7. 默认端口与配置入口
+## 7. 连接手册（公开部分）
 
-| 组件/服务 | 默认宿主端口 | 主要配置 |
-|---|---:|---|
-| PostgreSQL | 35432 | 应用：`OA_PG_HOST`、`OA_PG_PORT`、`OA_PG_DB`、`OA_PG_USER`、`OA_PG_PASSWORD`；Compose 映射：`OA_PG_HOST_PORT` |
-| Redis | 36379 | 应用：`OA_REDIS_HOST`、`OA_REDIS_PORT`；Compose 映射：`OA_REDIS_HOST_PORT` |
-| Kafka | 39092 | 应用：`OA_KAFKA`；Compose 映射：`OA_KAFKA_HOST_PORT` |
-| MinIO API / Console | 39000 / 39001 | 应用：`OA_MINIO_ENDPOINT`、`OA_MINIO_ROOT_USER`、`OA_MINIO_ROOT_PASSWORD`、`OA_MINIO_BUCKET`；Compose 映射：`OA_MINIO_API_PORT`、`OA_MINIO_CONSOLE_PORT` |
-| oa-app | 8400 | `oa-app/src/main/resources/application.yml` |
-| oa-notify-service | 8401 | `oa-notify-service/src/main/resources/application.yml` |
-| oa-file-service | 8402 | `oa-file-service/src/main/resources/application.yml` |
-| oa-job-service | 8403 | `oa-job-service/src/main/resources/application.yml` |
-| Casdoor（外部） | 8000 | 后端 `OA_JWT_*`；前端 `VITE_CASDOOR_*` |
-| workflow-platform（外部） | 8300 | `OA_WORKFLOW_MODE`、`OA_WORKFLOW_URL`、`OA_WORKFLOW_KAFKA` |
+本节记录**本仓库可共享**的连接方式：连接 ID、环境、端点/端口、库与命名空间、认证方式和环境变量名。
+真实密码、client secret 与加密密钥**不进 Git**，按连接 ID 写在本机私密手册
+`~/.local/share/codex-project-docs/oa-platform-995e2ffe570b/CONNECTIONS.private.md`。
+
+分层来源（冲突时并列，不猜哪份已登录成功）：
+
+| 来源 | 含义 | 权威范围 |
+|---|---|---|
+| 仓库声明 | `deploy/.env.example`、`deploy/docker-compose.yml` 的 `${VAR:-default}`、各服务 `application.yml` 默认值 | 未设环境变量时的本地开发约定 |
+| 本地覆盖 | 被 gitignore 的 `deploy/.env`（`git check-ignore` 已确认；`git ls-files` 未跟踪） | 本机实际注入 Compose / 应用的值 |
+| 环境实测 | 本机端口是否在听、容器是否 healthy | 只表示进程/端口，不等于已经用该账号登录成功 |
+
+当前只整理 **local** 开发环境。仓库里没有独立的 test/staging/production Compose；生产账号不得写进本文件。
+
+### 7.1 本项目 Compose 中间件
+
+基础设施由 [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) 提供，project name 为 `oa-platform`。
+默认 `docker compose up` 只起 PostgreSQL / Redis / Kafka / MinIO。
+
+| 连接 ID | 组件 | 产品/镜像 | 宿主地址 | 容器内地址 | 数据范围 | 认证 | 变量 / secret 引用 |
+|---|---|---|---|---|---|---|---|
+| `local/oa-pg/app` | 业务库 | PostgreSQL 16（`postgres:16-alpine`） | `localhost:${OA_PG_HOST_PORT:-35432}` | `postgres:5432` | 库 `${OA_PG_DB:-oa}`；schema 见 §2.1 | 密码认证；用户 `${OA_PG_USER:-oa}`；超级用户级（Compose `POSTGRES_USER`） | `OA_PG_HOST` `OA_PG_PORT` `OA_PG_DB` `OA_PG_USER` `OA_PG_PASSWORD`；宿主映射 `OA_PG_HOST_PORT` |
+| `local/oa-redis/app` | 缓存/PubSub | Redis 7（`redis:7-alpine`） | `localhost:${OA_REDIS_HOST_PORT:-36379}` | `redis:6379` | 默认 DB 0；键前缀如 `oa:` | **无密码**（Compose 未设 `--requirepass`） | `OA_REDIS_HOST` `OA_REDIS_PORT`；宿主映射 `OA_REDIS_HOST_PORT` |
+| `local/oa-kafka/app` | OA 事件总线 | Kafka 3.8.0 KRaft（`apache/kafka:3.8.0`） | `localhost:${OA_KAFKA_HOST_PORT:-39092}` | `kafka:9092` | 业务 Outbox 主题（含 `iam.role.changed.v1`）；自动建主题 | PLAINTEXT，无 SASL | 应用 `OA_KAFKA`；宿主映射 `OA_KAFKA_HOST_PORT` |
+| `local/oa-minio/app` | 对象存储 API | MinIO（`minio/minio:latest`，服务端版本未钉死） | `http://localhost:${OA_MINIO_API_PORT:-39000}` | `http://minio:9000` | bucket `${OA_MINIO_BUCKET:-oa-files}` | Access Key = `${OA_MINIO_ROOT_USER:-oaminio}`（root） | `OA_MINIO_ENDPOINT` `OA_MINIO_ROOT_USER` `OA_MINIO_ROOT_PASSWORD` `OA_MINIO_BUCKET` |
+| `local/oa-minio/console` | MinIO 控制台 | 同上 | `http://localhost:${OA_MINIO_CONSOLE_PORT:-39001}` | 容器 `:9001` | 同上 | 与 API 同一套 root 用户 | `OA_MINIO_CONSOLE_PORT`；凭据同 `local/oa-minio/app` |
+
+应用 JDBC / 客户端模板（密码用变量，禁止把 DSN 写进公开文档）：
+
+```text
+PostgreSQL  jdbc:postgresql://${OA_PG_HOST:localhost}:${OA_PG_PORT:35432}/${OA_PG_DB:oa}
+Redis       ${OA_REDIS_HOST:localhost}:${OA_REDIS_PORT:36379}   # 无 password 字段
+Kafka       ${OA_KAFKA:localhost:39092}
+MinIO       ${OA_MINIO_ENDPOINT:http://localhost:39000}
+```
+
+健康检查（不需要业务密码）：PostgreSQL `pg_isready`；Redis `PING`；Kafka broker API versions；MinIO 控制台端口探测。
+持久卷：`oa-pg-data`、`oa-minio-data`。
+
+### 7.2 外部复用平台（不在本项目 Compose）
+
+| 连接 ID | 组件 | 归属 | 默认端点 | 本项目用途 | 认证 / 变量 | 状态 |
+|---|---|---|---|---|---|---|
+| `local/casdoor/oidc` | Casdoor OIDC | auth-platform | `http://localhost:8000`；JWKS `/.well-known/jwks` | JWT 校验、前端授权码 + PKCE | 后端 `OA_JWT_JWKS` `OA_JWT_ISSUER` `OA_JWT_AUDIENCE`；前端 `VITE_CASDOOR_AUTHORITY` | 本仓库不部署；audience 仓库声明为 `oa-platform-local` |
+| `local/casdoor/spa-client` | OA SPA 应用 | 由 `deploy/scripts/provision-oa-casdoor.sh` 写入 Casdoor | 同上 | 登录客户端 | `OA_CASDOOR_CLIENT_ID`（声明默认 `oa-platform-local`）、`OA_CASDOOR_CLIENT_SECRET` | secret 走私密手册；脚本还会用 Casdoor 管理账号调 API |
+| `local/workflow-http/app` | workflow-platform HTTP | workflow-platform | `${OA_WORKFLOW_URL:http://localhost:8300}` | 流程部署/查询/办理 | SDK `workflow.client.enabled`；无本仓库账号表 | `REMOTE` 模式依赖该地址；Compose 的 `oa-app` **未注入** `OA_WORKFLOW_URL` |
+| `local/workflow-kafka/command` | 中台命令总线 | workflow-platform | `${OA_WORKFLOW_KAFKA}`；冒烟脚本用 `localhost:29092` | `workflow.command.*` 必须走这条总线，不能走 `OA_KAFKA` | PLAINTEXT | 留空会与 OA 总线混投，中台收不到命令且不报错 |
+| `local/spicedb/authz` | SpiceDB | auth-platform | 邻平台 `:8543`（本仓库未配置 endpoint） | 知识库对象授权（规划） | `oa.authz.spicedb.enabled` 默认 `false` | **当前未启用**；适配器 fail-fast，不是运行依赖 |
+
+Casdoor 管理面账号、built-in 应用 secret、auth-platform 自己的 PostgreSQL（宿主 **15432**，库名不属于 OA）**不是** OA 业务库。本项目只通过 Casdoor HTTP 复用认证，不直连 `authz-postgres` 跑业务 SQL。
+
+### 7.3 应用入口（非中间件，便于对照）
+
+| 连接 ID | 服务 | 默认宿主端口 | 配置 |
+|---|---|---:|---|
+| `local/oa-app/http` | oa-app | 8400 | `OA_APP_PORT`；`oa-app/src/main/resources/application.yml` |
+| `local/oa-notify/http` | oa-notify-service | 8401 | `OA_NOTIFY_PORT` |
+| `local/oa-file/http` | oa-file-service | 8402 | `OA_FILE_PORT` |
+| `local/oa-job/http` | oa-job-service | 8403 | `OA_JOB_PORT` |
+| `local/oa-console/http` | oa-console | 5473 开发 / 8404 容器 | `OA_CONSOLE_PORT` |
+| `local/oa-mobile/http` | oa-mobile | 5474 开发 / 8405 容器 | `OA_MOBILE_PORT` |
+
+容器内应用连中间件必须用 **服务名 + 容器端口**（`postgres:5432`、`redis:6379`、`kafka:9092`、`minio:9000`），不能用宿主机映射端口。IDE / `java -jar` 则用上表宿主端口。
+
+本机 `deploy/.env` 相对 `.env.example`：PostgreSQL / Redis / Kafka / MinIO 的端口与账号键齐全；
+`OA_APP_PORT`、`OA_SECURITY_MODE`、`OA_WORKFLOW_MODE` 与 example **不一致**（以本地覆盖为准，值见私密手册）；
+JWT / 前端 Casdoor 变量未写入 `.env`，运行时回落到 Compose / `application.yml` / 构建参数。
+
+### 7.4 刻意避让的邻平台端口
+
+这些端口**属于其它仓库的 Compose**，本项目不得占用、不得当成 OA 自己的库：
+
+| 端口 | 归属 |
+|---|---|
+| 9092 | langchain4j-platform |
+| 29092、25432 | workflow-platform（命令 Kafka / 中台 PostgreSQL） |
+| 15432 | auth-platform PostgreSQL |
+| 8000 | Casdoor（auth-platform） |
+| 8300 | workflow-platform HTTP |
+| 8543 | SpiceDB（auth-platform；OA 当前不连） |
+
+### 7.5 本次只读核验（2026-09-14）
+
+区分「配置声明」和「此刻进程」：
+
+| 目标 | 结果 |
+|---|---|
+| `deploy/.env` | 存在；已被 `.gitignore` 忽略；未进入 Git 跟踪 |
+| `docker compose -p oa-platform ps` | 无运行中的本项目容器 |
+| 宿主 `35432` / `36379` / `39092` / `39000` / `39001` | 未监听 → OA 基建 **未核验登录** |
+| 宿主 `8000` | 在监听 → Casdoor 进程在，**未做账号登录核验** |
+| 宿主 `8300` / `29092` | 未监听 → workflow-platform **本次不可达** |
+| 宿主 `15432` / `8543` | 在监听 → 邻平台进程在；OA 不直连，未采集其账号 |
+
+因此公开表格中的账号与端口是**仓库声明 + 本地 .env 覆盖关系**；不能把本次核验写成「已用该密码登录成功」。
 
 ## 8. 清单维护依据
 
-后续增删组件时，应同步检查并更新以下来源：
+后续增删组件或改端口/账号时，应同步检查并更新以下来源：
 
 1. `pom.xml`、`oa-dependencies/pom.xml` 和各模块 `pom.xml`。
 2. `oa-console/package.json`、`oa-mobile/package.json`。
-3. `deploy/docker-compose.yml` 与 `deploy/.env.example`。
+3. `deploy/docker-compose.yml` 与 `deploy/.env.example`；本机覆盖看被忽略的 `deploy/.env`。
 4. 各部署单元的 `src/main/resources/application.yml`。
 5. 各模块 `src/main/resources/db/migration/` 下的 Flyway 脚本。
 6. 实际生产代码中的客户端、生产者、监听器和配置类；仅有依赖声明不等于组件已经投入使用。
+7. 本节公开连接 ID，以及本机私密手册中的对应凭据条目（真实密码不回写进 Git）。

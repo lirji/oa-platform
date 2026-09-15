@@ -6,6 +6,7 @@ import PermRoute from '../auth/PermRoute'
 import LoginPage from '../pages/LoginPage'
 import CallbackPage from '../pages/CallbackPage'
 import ForbiddenPage from '../pages/ForbiddenPage'
+import NotFoundPage from '../pages/NotFoundPage'
 
 /**
  * ★ 应用壳（AppLayout + 工作台）也懒加载。
@@ -23,6 +24,7 @@ const WorkbenchPage = lazy(() => import('../pages/workbench/WorkbenchPage'))
 
 // ★ 路由级 lazy 才是"不进首屏"的保证；vite 的 manualChunks 只决定"进来时是哪一块"。
 //   chunk 边界刻意 = MENU code 边界，这样"菜单可见性"与"代码分割"是同一条线，最好解释。
+const OrgWorkspace = lazy(() => import('../pages/org/OrgWorkspace'))
 const OrgTreePage = lazy(() => import('../pages/org/OrgTreePage'))
 const EmployeesPage = lazy(() => import('../pages/org/EmployeesPage'))
 const DirectoryPage = lazy(() => import('../pages/org/DirectoryPage'))
@@ -31,6 +33,10 @@ const GrantsPage = lazy(() => import('../pages/iam/GrantsPage'))
 const SandboxPage = lazy(() => import('../pages/iam/SandboxPage'))
 const ReportPage = lazy(() => import('../pages/report/ReportPage'))
 const AuditPage = lazy(() => import('../pages/report/AuditPage'))
+const AttendancePage = lazy(() => import('../pages/attendance/AttendancePage'))
+const OfficialDocPage = lazy(() => import('../pages/doc/OfficialDocPage'))
+const AdminBizPage = lazy(() => import('../pages/admin/AdminBizPage'))
+const NotifyPage = lazy(() => import('../pages/notify/NotifyPage'))
 
 const loading = (
   <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -59,9 +65,15 @@ export const router = createBrowserRouter([
       { index: true, element: <Suspense fallback={loading}><WorkbenchPage /></Suspense> },
       { path: 'workbench', element: <Suspense fallback={loading}><WorkbenchPage /></Suspense> },
 
-      { path: 'org', element: guarded('oa:org:view', <OrgTreePage />) },
-      { path: 'org/employees', element: guarded('oa:employee:view', <EmployeesPage />) },
-      { path: 'org/directory', element: guarded('oa:employee:view', <DirectoryPage />) },
+      {
+        path: 'org',
+        element: <Suspense fallback={loading}><OrgWorkspace /></Suspense>,
+        children: [
+          { index: true, element: guarded('oa:org:view', <OrgTreePage />) },
+          { path: 'employees', element: guarded('oa:employee:view', <EmployeesPage />) },
+          { path: 'directory', element: guarded('oa:employee:view', <DirectoryPage />) },
+        ],
+      },
 
       { path: 'kb', element: guarded('oa:kb:read', <KnowledgePage />) },
 
@@ -70,6 +82,12 @@ export const router = createBrowserRouter([
 
       { path: 'report', element: guarded('oa:report:view', <ReportPage />) },
       { path: 'report/audit', element: guarded('oa:report:view', <AuditPage />) },
+
+      { path: 'attendance', element: guarded('oa:attendance:view', <AttendancePage />) },
+      { path: 'doc', element: guarded('oa:doc:read', <OfficialDocPage />) },
+      { path: 'admin-biz', element: guarded('oa:asset:read', <AdminBizPage />) },
+      { path: 'notify', element: guarded('oa:notify:read', <NotifyPage />) },
+      { path: '*', element: <Suspense fallback={loading}><NotFoundPage /></Suspense> },
     ],
   },
 ])

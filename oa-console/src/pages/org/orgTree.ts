@@ -23,6 +23,79 @@ export function indexTree<T extends TreePathNode>(nodes: readonly T[]): Map<numb
   return m
 }
 
+/** 把某节点的子树换成懒加载结果，其余结构不动。 */
+export function attachChildren<T extends { id: number; children?: readonly T[] }>(
+  nodes: readonly T[],
+  id: number,
+  children: T[],
+): T[] {
+  return nodes.map((n) => {
+    if (n.id === id) return { ...n, children }
+    if (!n.children?.length) return n
+    return { ...n, children: attachChildren(n.children, id, children) }
+  })
+}
+
+/** 按名称/编码过滤，命中节点的祖先一并保留，便于树搜索后仍能展开。 */
+export function filterTree<T extends { name: string; code: string; children?: readonly T[] }>(
+  nodes: readonly T[],
+  keyword: string,
+): T[] {
+  const q = keyword.trim().toLocaleLowerCase('zh-CN')
+  if (!q) return nodes as T[]
+  const keep = (n: T): T | null => {
+    const kids = (n.children ?? []).map(keep).filter((c): c is T => c != null)
+    const hit = n.name.toLocaleLowerCase('zh-CN').includes(q)
+      || n.code.toLocaleLowerCase('zh-CN').includes(q)
+    if (!hit && kids.length === 0) return null
+    return { ...n, children: kids }
+  }
+  return nodes.map(keep).filter((n): n is T => n != null)
+}
+
+/** 收集树上全部 id，搜索命中后用来展开祖先。 */
+export function collectIds<T extends { id: number; children?: readonly T[] }>(nodes: readonly T[]): number[] {
+  const ids: number[] = []
+  const walk = (ns: readonly T[]) => {
+    for (const n of ns) {
+      ids.push(n.id)
+      if (n.children?.length) walk(n.children)
+    }
+  }
+  walk(nodes)
+  return ids
+}
+
+/**
+ * 通讯录条目是否属于某组织（本级或下级）。
+ *
+ * <p>目录接口没有 orgId 过滤，只能前端用 path 前缀筛。正确性同样依赖 path 尾斜杠。
+ */
+export function inOrgSubtree(
+  entry: { orgId?: number | null; orgPath?: string | null },
+  org: { id: number; path: string },
+  directOnly = false,
+): boolean {
+  if (entry.orgId === org.id) return true
+  if (directOnly) return false
+  const p = entry.orgPath
+  if (!p) return false
+  return p.startsWith(org.path)
+}
+
+/** 新建下级时的类型建议；类型只是标签，后端不强制父子组合。 */
+export function suggestedChildType(parentType: string): string {
+  switch (parentType) {
+    case 'GROUP': return 'COMPANY'
+    case 'COMPANY':
+    case 'BU':
+    case 'CENTER': return 'DEPT'
+    case 'DEPT': return 'TEAM'
+    case 'TEAM': return 'SQUAD'
+    default: return 'TEAM'
+  }
+}
+
 /**
  * 成环预判：不能把一个节点拖进它自己或它的后代。
  *

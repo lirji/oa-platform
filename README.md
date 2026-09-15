@@ -106,7 +106,16 @@ OA_BUILD_RUN_TESTS=true OA_DOCKER_PULL=true OA_DOCKER_NO_CACHE=true bash deploy/
 
 入口：PC `http://localhost:8404`，移动端 `http://localhost:8405`。生产默认 `JWT`；
 `DEV` 只供本地冒烟显式使用，JWT 模式会拒绝 `X-OA-User` 身份覆盖。
+能力门户（`http://localhost:5274`）的 OA 卡片进入 PC 登录页 `:8404/login`，用 Casdoor `built-in` / `admin` / `123`。
 若 `deploy/.env` 覆盖了端口，应以 `docker compose ... ps` 显示的宿主端口为准。
+
+本地库空时，工作台/组织树没有业务行。灌一批**写进数据库**的演示数据（幂等，约 12 人，不替代万人 COPY）：
+
+```bash
+bash deploy/scripts/seed-demo-data.sh
+```
+
+万人通讯录与 e2e 夹具仍用 `deploy/scripts/seed-console-fixture.sh`（需显式 `OA_SECURITY_MODE=DEV` 且 `OA_ORG_SEED_ENABLED=true`）。
 
 只更新应用镜像时无需重启数据库等基建：重新运行 `build-images.sh` 后，对
 `oa-app oa-notify oa-file oa-job oa-console oa-mobile` 执行 `up -d --force-recreate` 即可。
@@ -182,6 +191,9 @@ OA_NOTIFY_BASE=http://localhost:8401 OA_ADMIN=seed-user-1 \
 
 刻意避让：9092 属 langchain4j-platform，29092 与 25432 属 workflow-platform，15432 属 auth-platform。
 
+账号用途、环境变量、宿主/容器地址和连接 ID 见 [`docs/DATABASES_AND_COMPONENTS.md`](docs/DATABASES_AND_COMPONENTS.md) §7。
+真实密码不进 Git，写在本机私密连接手册。
+
 ---
 
 ## 模块
@@ -229,7 +241,8 @@ oa-mobile          员工 H5 :5474 / :8405（待办、打卡、通讯录、公�
 | [docs/ADR.md](docs/ADR.md) | 决策记录，含**被否掉的方案**与实现期新增的决策 |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | 运维手册：启停、排障、**踩过的坑清单** |
 | [docs/API.md](docs/API.md) | 接口一览与权限点对照 |
-| [docs/DATABASES_AND_COMPONENTS.md](docs/DATABASES_AND_COMPONENTS.md) | 数据库、缓存、消息队列、对象存储、外部平台与前后端组件清单 |
+| [docs/README.md](docs/README.md) | 文档索引与来源约定 |
+| [docs/DATABASES_AND_COMPONENTS.md](docs/DATABASES_AND_COMPONENTS.md) | 数据库、中间件、连接 ID / 端口 / 变量名；真实密码不在本文件 |
 | [角色管理交付报告](docs/delivery/role-management/DELIVERY_REPORT.md) | 角色治理范围、验收证据、发布与回滚说明 |
 | [数据权限全局保障方案](docs/plans/data-permission-global-guard/FINAL_PLAN.md) | 已落地的平台强制协议、全仓迁移阶段与验收标准 |
 | `docs/plans/oa-platform-0819-1721/` | 原始规划（FINAL_PLAN 845 行）与**权威进度文件** |
