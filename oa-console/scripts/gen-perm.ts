@@ -170,8 +170,9 @@ export function parseGolden(root = REPO_ROOT): Set<string> {
     const g = join(root, mod, 'src/test/resources/api-surface.golden')
     if (!existsSync(g)) continue
     for (const line of readFileSync(g, 'utf8').split('\n')) {
-      const m = /\s(oa:[a-z0-9:-]+)\s*(\[[^\]]*\])?\s*$/.exec(line)
-      if (m) set.add(m[1])
+      const m = /\s((?:oa:[a-z0-9:-]+)(?:\|oa:[a-z0-9:-]+)*)\s*(\[[^\]]*\])?\s*$/.exec(line)
+      if (!m) continue
+      for (const code of m[1].split('|')) set.add(code)
     }
   }
   return set

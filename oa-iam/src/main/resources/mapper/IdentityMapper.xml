@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.iam.infrastructure.mapper.IdentityMapper">
+
+    <resultMap id="IdentityMap" type="com.lrj.oa.iam.domain.Identity">
+        <id column="id" property="id"/>
+        <result column="seq" property="seq"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="identity_type" property="identityType"/>
+        <result column="display_name" property="displayName"/>
+        <result column="source" property="source"/>
+        <result column="status" property="status"/>
+        <result column="external_key" property="externalKey"/>
+        <result column="employee_id" property="employeeId"/>
+        <result column="org_id" property="orgId"/>
+        <result column="org_path" property="orgPath"/>
+        <result column="attributes" property="attributes"
+                typeHandler="com.lrj.oa.common.mybatis.JsonbTypeHandler"/>
+        <result column="risk_level" property="riskLevel"/>
+        <result column="owner_identity_id" property="ownerIdentityId"/>
+        <result column="expired_at" property="expiredAt"/>
+        <result column="version" property="version"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="cols">
+        id, seq, tenant_id, identity_type, display_name, source, status,
+        external_key, employee_id, org_id, org_path, attributes, risk_level,
+        owner_identity_id, expired_at, version, created_at, updated_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO oa_iam.identity (
+            id, tenant_id, identity_type, display_name, source, status,
+            external_key, employee_id, org_id, org_path, attributes, risk_level,
+            owner_identity_id, expired_at, version, created_at, updated_at
+        ) VALUES (
+            CAST(#{id} AS uuid), #{tenantId}, #{identityType}, #{displayName}, #{source}, #{status},
+            #{externalKey}, #{employeeId}, #{orgId}, #{orgPath},
+            #{attributes, typeHandler=com.lrj.oa.common.mybatis.JsonbTypeHandler},
+            #{riskLevel},
+            <choose>
+                <when test="ownerIdentityId != null and ownerIdentityId != ''">CAST(#{ownerIdentityId} AS uuid)</when>
+                <otherwise>NULL</otherwise>
+            </choose>,
+            #{expiredAt}, #{version}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="selectById" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND id = CAST(#{id} AS uuid)
+    </select>
+
+    <select id="selectByExternalKey" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND identity_type = #{identityType}
+           AND external_key = #{externalKey}
+    </select>
+
+    <select id="selectByEmployeeId" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND employee_id = #{employeeId}
+    </select>
+
+    <select id="selectPage" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND status &lt;&gt; 'DELETED'
+        <if test="identityType != null and identityType != ''">
+           AND identity_type = #{identityType}
+        </if>
+        <if test="status != null and status != ''">
+           AND status = #{status}
+        </if>
+        <if test="q != null and q != ''">
+           AND (display_name ILIKE concat('%', #{q}, '%')
+                OR external_key ILIKE concat('%', #{q}, '%'))
+        </if>
+        <if test="cursor != null">
+           AND seq &gt; #{cursor}
+        </if>
+         ORDER BY seq
+         LIMIT #{limit}
+    </select>
+
+    <update id="updateMutable">
+        UPDATE oa_iam.identity
+           SET display_name = #{displayName},
+               expired_at = #{expiredAt},
+               owner_identity_id = <choose>
+                   <when test="ownerIdentityId != null and ownerIdentityId != ''">CAST(#{ownerIdentityId} AS uuid)</when>
+                   <otherwise>NULL</otherwise>
+               </choose>,
+               version = version + 1,
+               updated_at = #{updatedAt}
+         WHERE tenant_id = #{tenantId}
+           AND id = CAST(#{id} AS uuid)
+           AND version = #{version}
+           AND status &lt;&gt; 'DELETED'
+    </update>
+
+    <update id="updateStatus">
+        UPDATE oa_iam.identity
+           SET status = #{status},
+               version = version + 1,
+               updated_at = #{updatedAt}
+         WHERE tenant_id = #{tenantId}
+           AND id = CAST(#{id} AS uuid)
+           AND version = #{version}
+           AND status &lt;&gt; 'DELETED'
+    </update>
+
+    <update id="updateProjection">
+        UPDATE oa_iam.identity
+           SET display_name = #{displayName},
+               status = #{status},
+               org_id = #{orgId},
+               org_path = #{orgPath},
+               version = version + 1,
+               updated_at = #{updatedAt}
+         WHERE tenant_id = #{tenantId}
+           AND id = CAST(#{id} AS uuid)
+           AND status &lt;&gt; 'DELETED'
+    </update>
+
+    <delete id="deleteLabels">
+        DELETE FROM oa_iam.identity_label WHERE identity_id = CAST(#{identityId} AS uuid)
+    </delete>
+
+    <insert id="insertLabel">
+        INSERT INTO oa_iam.identity_label (identity_id, label)
+        VALUES (CAST(#{identityId} AS uuid), #{label})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="selectLabels" resultType="string">
+        SELECT label FROM oa_iam.identity_label
+         WHERE identity_id = CAST(#{identityId} AS uuid)
+         ORDER BY label
+    </select>
+
+    <select id="selectLabelsByIds" resultType="com.lrj.oa.iam.infrastructure.mapper.IdentityMapper$IdentityLabelRow">
+        SELECT identity_id AS identityId, label
+          FROM oa_iam.identity_label
+         WHERE identity_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            CAST(#{id} AS uuid)
+        </foreach>
+         ORDER BY label
+    </select>
+    <select id="selectByIds" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            CAST(#{id} AS uuid)
+        </foreach>
+           AND status IN ('ACTIVE', 'CREATED')
+         ORDER BY seq
+    </select>
+
+    <select id="selectByExternalKeys" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND identity_type = #{identityType}
+           AND external_key IN
+        <foreach collection="keys" item="key" open="(" separator="," close=")">
+            #{key}
+        </foreach>
+           AND status IN ('ACTIVE', 'CREATED')
+         ORDER BY seq
+    </select>
+
+    <select id="selectUsersByOrg" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND identity_type = 'USER'
+           AND status IN ('ACTIVE', 'CREATED')
+        <choose>
+            <when test="includeDescendants">
+           AND org_path LIKE concat(#{orgPathPrefix}, '%')
+            </when>
+            <otherwise>
+           AND org_id = #{orgId}
+            </otherwise>
+        </choose>
+         ORDER BY seq
+         LIMIT #{limit}
+    </select>
+
+    <select id="selectOwnedBy" resultMap="IdentityMap">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity
+         WHERE tenant_id = #{tenantId}
+           AND owner_identity_id = CAST(#{ownerIdentityId} AS uuid)
+           AND status &lt;&gt; 'DELETED'
+         ORDER BY seq
+         LIMIT #{limit}
+    </select>
+
+    <select id="selectActiveRoleGrants"
+            resultType="com.lrj.oa.iam.infrastructure.mapper.IdentityMapper$RoleGrantRow">
+        SELECT r.id AS roleId, r.code AS roleCode, r.name AS roleName,
+               g.id AS grantId, g.subject_type AS subjectType
+          FROM oa_iam.grant_record g
+          JOIN oa_iam.role r ON r.id = g.role_id
+         WHERE g.tenant_id = #{tenantId}
+           AND g.revoked_at IS NULL
+           AND g.valid_from &lt;= #{now}
+           AND (g.valid_to IS NULL OR g.valid_to &gt; #{now})
+           AND (
+                (g.subject_type = 'USER' AND g.subject_id = #{userId})
+             <if test="orgId != null">
+              OR (g.subject_type = 'ORG_UNIT' AND g.subject_id = CAST(#{orgId} AS varchar))
+             </if>
+               )
+         ORDER BY r.code
+    </select>
+
+    <insert id="backfillUsersFromEmployees">
+        INSERT INTO oa_iam.identity (
+            id, tenant_id, identity_type, display_name, source, status,
+            external_key, employee_id, org_id, org_path, risk_level, version
+        )
+        SELECT gen_random_uuid(),
+               e.tenant_id,
+               'USER',
+               e.name,
+               'CASDOOR',
+               CASE e.status
+                   WHEN 'LEFT' THEN 'DISABLED'
+                   WHEN 'LEAVING' THEN 'SUSPENDED'
+                   ELSE 'ACTIVE'
+               END,
+               e.user_id,
+               e.id,
+               a.org_unit_id,
+               u.path,
+               'LOW',
+               0
+          FROM oa_org.employee e
+          LEFT JOIN oa_org.employee_org_assignment a
+                 ON a.employee_id = e.id
+                AND a.assignment_type = 'PRIMARY'
+                AND a.valid_to IS NULL
+          LEFT JOIN oa_org.org_unit u ON u.id = a.org_unit_id
+            ON CONFLICT (tenant_id, identity_type, external_key) DO NOTHING
+    </insert>
+
+    <update id="refreshUsersFromEmployees">
+        UPDATE oa_iam.identity i
+           SET display_name = e.name,
+               status = CASE e.status
+                            WHEN 'LEFT' THEN 'DISABLED'
+                            WHEN 'LEAVING' THEN 'SUSPENDED'
+                            ELSE 'ACTIVE'
+                        END,
+               org_id = a.org_unit_id,
+               org_path = u.path,
+               version = i.version + 1,
+               updated_at = now()
+          FROM oa_org.employee e
+          LEFT JOIN oa_org.employee_org_assignment a
+                 ON a.employee_id = e.id
+                AND a.assignment_type = 'PRIMARY'
+                AND a.valid_to IS NULL
+          LEFT JOIN oa_org.org_unit u ON u.id = a.org_unit_id
+         WHERE i.employee_id = e.id
+           AND i.identity_type = 'USER'
+           AND i.tenant_id = e.tenant_id
+           AND i.status &lt;&gt; 'DELETED'
+    </update>
+
+    <insert id="backfillUserLabels">
+        INSERT INTO oa_iam.identity_label (identity_id, label)
+        SELECT i.id,
+               CASE WHEN e.employment_type IN ('OUTSOURCE', 'CONSULTANT') THEN 'CONTRACTOR' ELSE 'EMPLOYEE' END
+          FROM oa_iam.identity i
+          JOIN oa_org.employee e ON e.id = i.employee_id
+         WHERE i.identity_type = 'USER'
+            ON CONFLICT DO NOTHING
+    </insert>
+</mapper>

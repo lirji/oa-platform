@@ -5,6 +5,7 @@ import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.common.crypto.SensitiveCrypto;
 import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.org.api.event.EmployeeAssignmentChangedEvent;
+import com.lrj.oa.org.api.event.EmployeeCreatedEvent;
 import com.lrj.oa.org.application.command.OrgCommands;
 import com.lrj.oa.org.domain.*;
 import com.lrj.oa.org.infrastructure.mapper.*;
@@ -94,6 +95,9 @@ public class EmployeeService {
                     cmd.managerEmployeeId(), ReportingType.SOLID.name(), LocalDate.now()));
         }
 
+        events.publishEvent(new EmployeeCreatedEvent(
+                e.getUserId(), e.getId(), e.getName(), e.getEmploymentType(), e.getStatus(),
+                cmd.primaryOrgId(), treeCache.snapshot().pathOf(cmd.primaryOrgId())));
         log.info("新建员工 id={} empNo={} userId={} 主岗org={}", e.getId(), e.getEmpNo(), e.getUserId(), cmd.primaryOrgId());
         return e.getId();
     }

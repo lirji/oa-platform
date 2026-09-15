@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.iam.infrastructure.mapper.AuthzDecisionLogMapper">
+
+    <insert id="insert">
+        INSERT INTO oa_iam.authz_decision_log (
+            tenant_id, command_id, trace_id, caller_user_id, principal_id, identity_type,
+            resource_type, resource_id, action, decision, policy_id, reason, evaluated_at
+        ) VALUES (
+            #{tenantId}, #{commandId}, #{traceId}, #{callerUserId}, CAST(#{principalId} AS uuid),
+            #{identityType}, #{resourceType}, #{resourceId}, #{action}, #{decision},
+            #{policyId}, #{reason}, #{evaluatedAt}
+        )
+    </insert>
+
+    <select id="selectPage" resultType="com.lrj.oa.iam.domain.AuthzDecisionLog">
+        SELECT id, tenant_id AS tenantId, command_id AS commandId, trace_id AS traceId,
+               caller_user_id AS callerUserId, principal_id AS principalId,
+               identity_type AS identityType, resource_type AS resourceType,
+               resource_id AS resourceId, action, decision, policy_id AS policyId,
+               reason, evaluated_at AS evaluatedAt
+          FROM oa_iam.authz_decision_log
+         WHERE tenant_id = #{tenantId}
+        <if test="principalId != null and principalId != ''">
+           AND principal_id = CAST(#{principalId} AS uuid)
+        </if>
+        <if test="decision != null and decision != ''">
+           AND decision = #{decision}
+        </if>
+        <if test="cursor != null">
+           AND id &gt; #{cursor}
+        </if>
+         ORDER BY id
+         LIMIT #{limit}
+    </select>
+</mapper>

@@ -21,6 +21,11 @@ export const Code = {
   GRANT_EXPIRED: 3003,
   DELEGATION_INVALID: 3004,
   DATA_SCOPE_DENIED: 3005,
+  IDENTITY_NOT_FOUND: 3010,
+  IDENTITY_TYPE_IMMUTABLE: 3011,
+  IDENTITY_STATUS_CONFLICT: 3012,
+  NHI_OWNER_REQUIRED: 3013,
+  AUTHZ_CHECK_INVALID: 3020,
   FLOW_START_FAILED: 4001,
   FLOW_TASK_NOT_FOUND: 4002,
   FORM_TEMPLATE_INVALID: 4003,
@@ -114,12 +119,19 @@ export function normalizeError(e: unknown): NormalizedError {
     case Code.ORG_NOT_FOUND:
     case Code.EMPLOYEE_NOT_FOUND:
     case Code.FLOW_TASK_NOT_FOUND:
+    case Code.IDENTITY_NOT_FOUND:
       return { kind: 'notFound', code, text: backendMsg ?? '资源不存在或已被删除', retryable: false, raw: e }
+
+    case Code.IDENTITY_STATUS_CONFLICT:
+      return { kind: 'conflict', code, text: backendMsg ?? '身份状态不允许该操作', retryable: false, raw: e }
 
     case Code.BAD_REQUEST:
     case Code.FLOW_START_FAILED:
     case Code.FORM_TEMPLATE_INVALID:
     case Code.LEAVE_BALANCE_INSUFFICIENT:
+    case Code.IDENTITY_TYPE_IMMUTABLE:
+    case Code.NHI_OWNER_REQUIRED:
+    case Code.AUTHZ_CHECK_INVALID:
       return { kind: 'validation', code, text: backendMsg ?? '请求参数不合法', retryable: false, raw: e }
 
     case Code.INTERNAL_ERROR:

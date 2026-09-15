@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.iam.infrastructure.mapper.IdentitySyncJobMapper">
+
+    <sql id="cols">
+        id, tenant_id AS tenantId, command_id AS commandId, connector, mode, status,
+        created_count AS createdCount, updated_count AS updatedCount, skipped_count AS skippedCount,
+        error_message AS errorMessage, started_at AS startedAt, finished_at AS finishedAt,
+        created_by AS createdBy, created_at AS createdAt
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO oa_iam.identity_sync_job (
+            tenant_id, command_id, connector, mode, status,
+            created_count, updated_count, skipped_count,
+            started_at, created_by, created_at
+        ) VALUES (
+            #{tenantId}, #{commandId}, #{connector}, #{mode}, #{status},
+            #{createdCount}, #{updatedCount}, #{skippedCount},
+            #{startedAt}, #{createdBy}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectById" resultType="com.lrj.oa.iam.domain.IdentitySyncJob">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity_sync_job
+         WHERE tenant_id = #{tenantId} AND id = #{id}
+    </select>
+
+    <select id="selectByCommandId" resultType="com.lrj.oa.iam.domain.IdentitySyncJob">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.identity_sync_job
+         WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+    </select>
+
+    <update id="finish">
+        UPDATE oa_iam.identity_sync_job
+           SET status = #{status},
+               created_count = #{createdCount},
+               updated_count = #{updatedCount},
+               skipped_count = #{skippedCount},
+               error_message = #{errorMessage},
+               finished_at = #{finishedAt}
+         WHERE tenant_id = #{tenantId} AND id = #{id}
+    </update>
+</mapper>

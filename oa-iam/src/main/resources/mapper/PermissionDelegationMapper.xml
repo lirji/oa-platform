@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.iam.infrastructure.mapper.PermissionDelegationMapper">
+
+    <sql id="cols">
+        id, tenant_id AS tenantId,
+        delegator_identity_id AS delegatorIdentityId,
+        delegator_user_id AS delegatorUserId,
+        delegatee_identity_id AS delegateeIdentityId,
+        perm_codes AS permCodes, role_ids AS roleIds, resource_scope AS resourceScope,
+        valid_from AS validFrom, valid_to AS validTo, re_delegate AS reDelegate,
+        reason, status, created_at AS createdAt, revoked_at AS revokedAt, revoked_by AS revokedBy
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO oa_iam.permission_delegation (
+            tenant_id, delegator_identity_id, delegator_user_id, delegatee_identity_id,
+            perm_codes, role_ids, resource_scope, valid_from, valid_to, re_delegate,
+            reason, status, created_at
+        ) VALUES (
+            #{tenantId}, CAST(#{delegatorIdentityId} AS uuid), #{delegatorUserId},
+            CAST(#{delegateeIdentityId} AS uuid),
+            CAST(#{permCodes} AS jsonb), CAST(#{roleIds} AS jsonb),
+            CAST(#{resourceScope} AS jsonb), #{validFrom}, #{validTo}, #{reDelegate},
+            #{reason}, #{status}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectById" resultType="com.lrj.oa.iam.domain.PermissionDelegation">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.permission_delegation
+         WHERE tenant_id = #{tenantId} AND id = #{id}
+    </select>
+
+    <select id="selectPage" resultType="com.lrj.oa.iam.domain.PermissionDelegation">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.permission_delegation
+         WHERE tenant_id = #{tenantId}
+           AND (delegator_identity_id = CAST(#{identityId} AS uuid)
+                OR delegatee_identity_id = CAST(#{identityId} AS uuid))
+        <if test="cursor != null">
+           AND id &gt; #{cursor}
+        </if>
+         ORDER BY id
+         LIMIT #{limit}
+    </select>
+
+    <select id="selectActiveForDelegatee" resultType="com.lrj.oa.iam.domain.PermissionDelegation">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.permission_delegation
+         WHERE tenant_id = #{tenantId}
+           AND delegatee_identity_id = CAST(#{delegateeIdentityId} AS uuid)
+           AND status = 'ACTIVE'
+           AND valid_from &lt;= #{now}
+           AND valid_to &gt; #{now}
+         ORDER BY id
+    </select>
+
+    <select id="selectActiveCoveringPerm" resultType="com.lrj.oa.iam.domain.PermissionDelegation">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.permission_delegation
+         WHERE tenant_id = #{tenantId}
+           AND status = 'ACTIVE'
+           AND valid_from &lt;= #{now}
+           AND valid_to &gt; #{now}
+           AND perm_codes @> jsonb_build_array(#{permCode})
+         ORDER BY id
+    </select>
+
+    <update id="revoke">
+        UPDATE oa_iam.permission_delegation
+           SET status = 'REVOKED',
+               revoked_by = #{revokedBy},
+               revoked_at = #{revokedAt}
+         WHERE tenant_id = #{tenantId} AND id = #{id} AND status = 'ACTIVE'
+    </update>
+</mapper>

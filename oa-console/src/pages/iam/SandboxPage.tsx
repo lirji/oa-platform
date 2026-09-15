@@ -4,15 +4,18 @@ import {
   Row, Space, Statistic, Tag, Timeline, Tooltip, Typography,
 } from 'antd'
 import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import type { UseQueryResult } from '@tanstack/react-query'
 import { apiClient } from '@oa/shared/api/client'
 import { errText } from '@oa/shared/api/errors'
+import { PERM } from '@oa/shared/perm/codes'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { PageSkeleton, ErrorState } from '../../components/common/AsyncState'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { colors } from '../../theme/colors'
 import { useAppBreakpoint } from '../../hooks/useAppBreakpoint'
-import { usePermVersion } from '../../auth/usePerm'
+import { usePerm, usePermVersion } from '../../auth/usePerm'
+import type { IdentityView } from './IdentityCatalogPanel'
 
 /** 一条授权来源。后端 `/iam/admin/why` 返回，已是 camelCase 类型化 record。 */
 interface PermSource {
@@ -38,10 +41,11 @@ interface PermSource {
  */
 export default function SandboxPage() {
   const permVersion = usePermVersion()
+  const perm = usePerm()
   const [sp, setSp] = useSearchParams()
   const bp = useAppBreakpoint()
   const userId = sp.get('userId') ?? ''
-  const permCode = sp.get('permCode') ?? 'oa:employee:view'
+  const permCode = sp.get('permCode') ?? PERM.EMPLOYEE_VIEW
   const [draftUser, setDraftUser] = useState(userId)
 
   // C 档（1280–1439，1366×768 落这里）：右栏收起为可展开面板
@@ -91,6 +95,18 @@ export default function SandboxPage() {
     queryFn: async () => (await apiClient.get('/api/v1/iam/permissions/catalog')).data.data as
       { code: string; name: string; type: string; enabled: boolean }[],
     staleTime: 5 * 60_000,
+  })
+
+  const identity = useQuery({
+    queryKey: ['sandbox-identity', userId, permVersion],
+    queryFn: async () => {
+      const res = await apiClient.get(
+        `/api/v1/iam/identities?type=USER&q=${encodeURIComponent(userId)}&size=50`)
+      const items = (res.data.data?.items ?? []) as IdentityView[]
+      return items.find((row) => row.externalKey === userId) ?? null
+    },
+    enabled: Boolean(userId) && perm.has(PERM.IAM_IDENTITY_VIEW),
+    staleTime: 0,
   })
 
   /**
@@ -157,6 +173,8 @@ export default function SandboxPage() {
               </Typography.Text>
             </Space>
           </Card>
+          <CheckTrialCard userId={userId} permCode={permCode} identity={identity} />
+          <WhoHasAccessCard permCode={permCode} />
         </Col>
 
         {/* ── 中栏：为什么 ── */}
@@ -277,6 +295,192 @@ export default function SandboxPage() {
         )}
       </Row>
     </>
+  )
+}
+
+interface CheckDecisionView {
+  decision: 'ALLOW' | 'DENY'
+  policyId: string
+  reason: string
+  traceId: string
+  principalId: string
+  evaluatedAt: string
+}
+
+interface WhoHasAccessView {
+  permCode: string
+  known: boolean
+  items: Array<{
+    identityId: string
+    identityType: string
+    displayName: string
+    externalKey: string
+    source: string
+    via: string
+    grantId: number
+  }>
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  Direct: '直接',
+  Role: '角色',
+  Group: '用户组',
+  Delegation: '委托',
+  Inherited: '继承',
+}
+
+/** 资源反查：谁持有当前权限点。与中栏 /why 方向相反。 */
+function WhoHasAccessCard({ permCode }: { permCode: string }) {
+  const perm = usePerm()
+  const permVersion = usePermVersion()
+  const q = useQuery({
+    queryKey: ['sandbox-who-has-access', permCode, permVersion],
+    queryFn: async () =>
+      (await apiClient.get(
+        `/api/v1/iam/admin/who-has-access?permCode=${encodeURIComponent(permCode)}`,
+      )).data.data as WhoHasAccessView,
+    enabled: Boolean(permCode),
+    staleTime: 0,
+  })
+  const canOpenIdentity = perm.has(PERM.IAM_IDENTITY_VIEW)
+
+  return (
+    <Card size="small" title="资源反查" style={{ marginTop: 16 }}>
+      {!permCode ? (
+        <Empty description="先选择一条权限点" />
+      ) : q.isLoading ? (
+        <PageSkeleton rows={4} />
+      ) : q.isError ? (
+        <ErrorState message={errText(q.error)} onRetry={q.refetch} />
+      ) : !q.data?.known ? (
+        <Alert type="warning" showIcon message="目录中无此 code，没有身份能持有它" />
+      ) : !q.data.items.length ? (
+        <Empty description="没有任何身份持有该权限" />
+      ) : (
+        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {q.data.items.length} 个身份
+            {q.data.items.length >= 200 ? '（已截断）' : ''}
+          </Typography.Text>
+          <div style={{ maxHeight: 240, overflow: 'auto' }}>
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              {q.data.items.map((row) => (
+                <Space key={`${row.identityId}-${row.source}-${row.grantId}`} direction="vertical" size={0}>
+                  <Space wrap size={6}>
+                    <Tag>{SOURCE_LABEL[row.source] ?? row.source}</Tag>
+                    {canOpenIdentity ? (
+                      <Link to={`/iam/identities/${row.identityId}`}>{row.displayName || row.externalKey}</Link>
+                    ) : (
+                      <Typography.Text>{row.displayName || row.externalKey}</Typography.Text>
+                    )}
+                  </Space>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {row.via}
+                  </Typography.Text>
+                </Space>
+              ))}
+            </Space>
+          </div>
+        </Space>
+      )}
+    </Card>
+  )
+}
+
+/** PDP Check 试算：走 /authz/check 并回显最近决策审计，与 why 热路径对照。 */
+function CheckTrialCard({
+  userId,
+  permCode,
+  identity,
+}: {
+  userId: string
+  permCode: string
+  identity: UseQueryResult<IdentityView | null>
+}) {
+  const perm = usePerm()
+  const permVersion = usePermVersion()
+  const identityId = identity.data?.identityId
+  const canResolveIdentity = perm.has(PERM.IAM_IDENTITY_VIEW)
+
+  const check = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post('/api/v1/authz/check', {
+        principal: { identityId, identityType: 'USER' },
+        resource: { type: 'API', id: permCode, attributes: {} },
+        action: 'READ',
+        environment: {},
+        commandId: `sandbox-${Date.now()}`,
+      })
+      return res.data.data as CheckDecisionView
+    },
+  })
+
+  const logs = useQuery({
+    queryKey: ['sandbox-decisions', identityId, permVersion],
+    queryFn: async () =>
+      (await apiClient.get(
+        `/api/v1/iam/admin/decisions?identityId=${encodeURIComponent(identityId!)}&size=5`,
+      )).data.data as {
+        items: Array<{
+          id: number
+          decision: string
+          policyId: string
+          reason: string
+          resourceId: string
+          evaluatedAt: string
+        }>
+      },
+    enabled: Boolean(identityId),
+    staleTime: 0,
+  })
+
+  return (
+    <Card size="small" title="Check 试算" style={{ marginTop: 16 }}>
+      {!userId ? (
+        <Empty description="先选择观察对象" />
+      ) : !canResolveIdentity ? (
+        <Alert type="warning" showIcon message="无法解析身份目录，Check 需要身份 ID" />
+      ) : identity.isLoading ? (
+        <PageSkeleton rows={3} />
+      ) : identity.isError ? (
+        <ErrorState message={errText(identity.error)} onRetry={identity.refetch} />
+      ) : !identityId ? (
+        <Empty description="尚未投影该用户的身份，无法调用 Check" />
+      ) : (
+        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            identityId {identityId}
+          </Typography.Text>
+          <Button
+            type="primary"
+            disabled={!permCode}
+            loading={check.isPending}
+            onClick={() => {
+              void check.mutateAsync().then(() => logs.refetch())
+            }}
+          >
+            调用 Check
+          </Button>
+          {check.isError && <Alert type="error" showIcon message={errText(check.error)} />}
+          {check.data && (
+            <Space wrap>
+              <Tag color={check.data.decision === 'ALLOW' ? 'success' : 'error'}>
+                {check.data.decision}
+              </Tag>
+              <Tag>{check.data.policyId}</Tag>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {check.data.reason}
+              </Typography.Text>
+            </Space>
+          )}
+          {logs.data?.items?.length ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              最近审计 {logs.data.items[0].decision} · {logs.data.items[0].policyId}
+            </Typography.Text>
+          ) : null}
+        </Space>
+      )}
+    </Card>
   )
 }
 

@@ -2,24 +2,32 @@
 
 ## 任务目标
 
-控制台菜单落到真实作业面（考勤 / 公文 / 行政 / 消息 / 组织人事），并修截图里的四个问题：考勤页、知识库操作栏溢出、会议室加载失败、驾驶舱加载失败。随后提交并推送到远程 main。
+把运行中的 oa-platform Brownfield 演进为企业身份与授权治理平台：身份 → 权限数据 → 策略 → 决策 → 授权 → 审计 → 风险 → 生命周期。现有 OA 审批保留为 Access Request / 提权 / 委托工作流，不是产品核心。设计已批准；实现连续推进。不 git commit / push / PR / release / deploy。
+
+## 当前状态
+
+S01–S10 可执行验收已过（live Flyway / 浏览器 UNVERIFIED）。设计范围内切片已全部落地。
 
 ## 已完成
 
-- 2026-09-15：菜单 route 回填（V19）+ 考勤 / 公文 / 行政 / 消息页面 + 404 兜底。
-- 2026-09-15：组织人事改为工作区（组织树 / 员工 / 通讯录），树按需加载。
-- 2026-09-15：会议室预定查询不再用 `tstzrange &&`（JSQLParser 解析失败 → 500），改为区间上下界比较。
-- 2026-09-15：驾驶舱 SQL 去掉 `FILTER` / `::`，别名避开保留字；前端同时收 camelCase / snake_case。
-- 2026-09-15：知识库表加横向滚动、操作列固定右侧；所有者 UUID 不再 `word-break: break-all`。
-- 2026-09-15：考勤首页改为上班/下班/工时/当日状态，链路指标收到折叠区。
-- 2026-09-15：已重建并 recreate `oa-app`、`oa-console`。oa-console 121 测通过；首屏 gzip 290.4 KB / 300 KB。
-- 2026-09-15：已发布 `origin/main` `62a346e`（任务分支 `feat/oa-console-pages-and-sql-fixes`，功能提交 `ea2a0af`）。不含 `tmp/`。auth-platform 无本任务改动。
-- 2026-09-15：远程 CI `34921197355` 已通过（PC Console / Backend / Mobile H5）。
+- 设计：`docs/design/identity-authz-governance/`
+- S01 身份目录。`TEST_RESULT_S01.md`
+- S02 `POST /authz/check` + 决策审计 + 沙盘 Check。`TEST_RESULT_S02.md`
+- S03 `GET /iam/identities/{id}/graph`。`TEST_RESULT_S03.md`
+- S04 权限申请本地四眼（不走远程流程）。`TEST_RESULT_S04.md`
+- S05 权限委托。`TEST_RESULT_S05.md`
+- S06 NHI 凭证。`TEST_RESULT_S06.md`
+- S07 身份同步。`TEST_RESULT_S07.md`
+- S08 资源反查。`TEST_RESULT_S08.md`
+- S09 风险发现。`TEST_RESULT_S09.md`
+- S10 Agent INVOKE。`TEST_RESULT_S10.md`
 
 ## 未完成
 
-- 已登录浏览器硬刷新后再点会议室、驾驶舱、知识库、考勤。
+- 运行中 `localhost:8400` 仍是旧进程（V110–V117 未执行）
+- 浏览器 E2E
+- PR / release / deploy 未授权
 
 ## 下一步
 
-硬刷新 http://localhost:8404 ，打开行政→会议室、管理驾驶舱、知识库、考勤。
+本轮授权本地提交并推 `origin/main`。live API / 控制台仍需 `clean install` 后重启。不创建 PR、不发版、不部署。

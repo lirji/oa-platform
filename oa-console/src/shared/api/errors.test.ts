@@ -79,4 +79,10 @@ describe('normalizeError —— 全错误码表', () => {
     const r = normalizeError(httpErr(400, Code.LEAVE_BALANCE_INSUFFICIENT, '假期额度不足'))
     expect(r.kind).toBe('validation')
   })
+
+  it('授权判定请求不完整是校验错误', () => {
+    const r = normalizeError(httpErr(400, Code.AUTHZ_CHECK_INVALID, '授权判定请求不完整'))
+    expect(r.kind).toBe('validation')
+    expect(r.text).toBe('授权判定请求不完整')
+  })
 })

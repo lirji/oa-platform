@@ -30,6 +30,7 @@ const EmployeesPage = lazy(() => import('../pages/org/EmployeesPage'))
 const DirectoryPage = lazy(() => import('../pages/org/DirectoryPage'))
 const KnowledgePage = lazy(() => import('../pages/doc/KnowledgePage'))
 const GrantsPage = lazy(() => import('../pages/iam/GrantsPage'))
+const IdentityDetailPage = lazy(() => import('../pages/iam/IdentityDetailPage'))
 const SandboxPage = lazy(() => import('../pages/iam/SandboxPage'))
 const ReportPage = lazy(() => import('../pages/report/ReportPage'))
 const AuditPage = lazy(() => import('../pages/report/AuditPage'))
@@ -78,6 +79,7 @@ export const router = createBrowserRouter([
       { path: 'kb', element: guarded('oa:kb:read', <KnowledgePage />) },
 
       { path: 'iam', element: guarded('oa:iam:view', <GrantsPage />) },
+      { path: 'iam/identities/:identityId', element: guarded('oa:iam:identity:view', <IdentityDetailPage />) },
       { path: 'iam/sandbox', element: guarded('oa:iam:admin', <SandboxPage />) },
 
       { path: 'report', element: guarded('oa:report:view', <ReportPage />) },

@@ -22,6 +22,11 @@ public enum ResultCode {
     GRANT_EXPIRED(3003, "授权已过期"),
     DELEGATION_INVALID(3004, "委托关系无效"),
     DATA_SCOPE_DENIED(3005, "超出数据权限范围"),
+    IDENTITY_NOT_FOUND(3010, "身份不存在"),
+    IDENTITY_TYPE_IMMUTABLE(3011, "身份类型创建后不可改"),
+    IDENTITY_STATUS_CONFLICT(3012, "身份状态迁移不合法"),
+    NHI_OWNER_REQUIRED(3013, "Agent 必须指定属主身份"),
+    AUTHZ_CHECK_INVALID(3020, "授权判定请求不完整"),
 
     FLOW_START_FAILED(4001, "流程发起失败"),
     FLOW_TASK_NOT_FOUND(4002, "待办不存在或已被处理"),

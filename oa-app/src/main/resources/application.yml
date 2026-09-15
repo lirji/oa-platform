@@ -37,6 +37,7 @@ spring:
     out-of-order: true
 
 mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
   global-config:

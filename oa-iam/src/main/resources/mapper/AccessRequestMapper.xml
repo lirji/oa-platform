@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.iam.infrastructure.mapper.AccessRequestMapper">
+
+    <sql id="cols">
+        q.id, q.tenant_id AS tenantId, q.command_id AS commandId,
+        q.requester_user_id AS requesterUserId, q.requester_identity_id AS requesterIdentityId,
+        q.request_type AS requestType, q.role_id AS roleId,
+        q.perm_codes AS permCodes, q.valid_to AS validTo, q.reason, q.status,
+        q.requested_at AS requestedAt, q.decided_by AS decidedBy, q.decided_at AS decidedAt,
+        q.decision_reason AS decisionReason, q.grant_id AS grantId,
+        q.approval_instance_id AS approvalInstanceId,
+        r.code AS roleCode, r.name AS roleName
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO oa_iam.access_request (
+            tenant_id, command_id, requester_user_id, requester_identity_id, request_type,
+            role_id, perm_codes, valid_to, reason, status, requested_at
+        ) VALUES (
+            #{tenantId}, #{commandId}, #{requesterUserId},
+            <choose>
+                <when test="requesterIdentityId != null and requesterIdentityId != ''">CAST(#{requesterIdentityId} AS uuid)</when>
+                <otherwise>NULL</otherwise>
+            </choose>,
+            #{requestType}, #{roleId},
+            CAST(#{permCodes} AS jsonb), #{validTo}, #{reason}, #{status}, #{requestedAt}
+        )
+    </insert>
+
+    <select id="selectById" resultType="com.lrj.oa.iam.domain.AccessRequest">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.access_request q
+          LEFT JOIN oa_iam.role r ON r.id = q.role_id
+         WHERE q.tenant_id = #{tenantId} AND q.id = #{id}
+    </select>
+
+    <select id="selectByCommandId" resultType="com.lrj.oa.iam.domain.AccessRequest">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.access_request q
+          LEFT JOIN oa_iam.role r ON r.id = q.role_id
+         WHERE q.tenant_id = #{tenantId} AND q.command_id = #{commandId}
+    </select>
+
+    <select id="selectPending" resultType="com.lrj.oa.iam.domain.AccessRequest">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.access_request q
+          LEFT JOIN oa_iam.role r ON r.id = q.role_id
+         WHERE q.tenant_id = #{tenantId}
+           AND q.requester_user_id = #{requesterUserId}
+           AND q.request_type = #{requestType}
+           AND q.role_id = #{roleId}
+           AND q.status = 'PENDING'
+         ORDER BY q.id DESC
+         LIMIT 1
+    </select>
+
+    <select id="selectPage" resultType="com.lrj.oa.iam.domain.AccessRequest">
+        SELECT <include refid="cols"/>
+          FROM oa_iam.access_request q
+          LEFT JOIN oa_iam.role r ON r.id = q.role_id
+         WHERE q.tenant_id = #{tenantId}
+        <if test="requesterUserId != null and requesterUserId != ''">
+           AND q.requester_user_id = #{requesterUserId}
+        </if>
+        <if test="status != null and status != ''">
+           AND q.status = #{status}
+        </if>
+        <if test="cursor != null">
+           AND q.id &gt; #{cursor}
+        </if>
+         ORDER BY q.id
+         LIMIT #{limit}
+    </select>
+
+    <update id="approve">
+        UPDATE oa_iam.access_request
+           SET status = 'APPROVED',
+               decided_by = #{decidedBy},
+               decided_at = #{decidedAt},
+               decision_reason = #{decisionReason},
+               grant_id = #{grantId},
+               approval_instance_id = #{approvalInstanceId}
+         WHERE tenant_id = #{tenantId} AND id = #{id} AND status = 'PENDING'
+    </update>
+
+    <update id="reject">
+        UPDATE oa_iam.access_request
+           SET status = 'REJECTED',
+               decided_by = #{decidedBy},
+               decided_at = #{decidedAt},
+               decision_reason = #{decisionReason}
+         WHERE tenant_id = #{tenantId} AND id = #{id} AND status = 'PENDING'
+    </update>
+</mapper>

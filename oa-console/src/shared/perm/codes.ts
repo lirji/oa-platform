@@ -7,7 +7,7 @@
  * name、route、icon、sortOrder 一律运行期从 `/me/permissions` 取 ——
  * 抄进代码就成了第二份菜单定义。
  *
- * 共 67 个权限点，其中 53 个有 handler 在用。
+ * 共 71 个权限点，其中 57 个有 handler 在用。
  */
 
 export const PERM = {
@@ -41,10 +41,14 @@ export const PERM = {
   FLOW_TODO_HANDLE:      'oa:flow:todo:handle',
   FLOW_TODO_VIEW:        'oa:flow:todo:view',
   IAM_ADMIN:             'oa:iam:admin',
+  IAM_CHECK:             'oa:iam:check',
   IAM_DELEGATE:          'oa:iam:delegate',
   IAM_ELEVATE:           'oa:iam:elevate',
   IAM_ELEVATION_APPROVE: 'oa:iam:elevation:approve',
   IAM_GRANT:             'oa:iam:grant',
+  IAM_IDENTITY_ADMIN:    'oa:iam:identity:admin',
+  IAM_IDENTITY_VIEW:     'oa:iam:identity:view',
+  IAM_REQUEST:           'oa:iam:request',
   IAM_REVOKE:            'oa:iam:revoke',
   IAM_VIEW:              'oa:iam:view',
   JOB_RUN:               'oa:job:run',

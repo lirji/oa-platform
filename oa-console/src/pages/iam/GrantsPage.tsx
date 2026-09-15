@@ -8,8 +8,13 @@ import { PageHeader } from '../../components/layout/PageHeader'
 import { DataCard } from '../../components/common/DataCard'
 import Can from '../../auth/Can'
 import { usePerm, usePermVersion } from '../../auth/usePerm'
+import { PERM } from '@oa/shared/perm/codes'
 import { AbacPanel, UserGroupsPanel, type UserGroup } from './IamPolicyPanels'
 import RoleManagementPanel from './RoleManagementPanel'
+import IdentityCatalogPanel from './IdentityCatalogPanel'
+import AccessRequestPanel from './AccessRequestPanel'
+import PermissionDelegationPanel from './PermissionDelegationPanel'
+import RiskFindingsPanel from './RiskFindingsPanel'
 
 interface Role { id: number; code: string; name: string; defaultScope: string }
 interface GrantRecord {
@@ -135,8 +140,11 @@ export default function GrantsPage() {
 
   return (
     <>
-      <PageHeader title="权限策略" description="统一管理角色、主体授权、用户组和 ABAC 条件策略" />
+      <PageHeader title="身份与授权治理" description="身份目录、角色、主体授权、用户组和 ABAC 条件" />
       <Tabs items={[
+        ...(perm.has('oa:iam:identity:view') ? [
+          { key: 'identities', label: '身份目录', children: <IdentityCatalogPanel /> },
+        ] : []),
         {
           key: 'grants', label: '主体授权', children: <Row gutter={16}>
         <Col xs={24} lg={9}>
@@ -238,6 +246,15 @@ export default function GrantsPage() {
           { key: 'roles', label: '角色管理', children: <RoleManagementPanel /> },
           { key: 'groups', label: '用户组', children: <UserGroupsPanel /> },
           { key: 'abac', label: 'ABAC 条件', children: <AbacPanel /> },
+        ] : []),
+        ...(perm.has('oa:iam:request') ? [
+          { key: 'access-requests', label: '权限申请', children: <AccessRequestPanel /> },
+        ] : []),
+        ...(perm.has(PERM.IAM_DELEGATE) ? [
+          { key: 'permission-delegations', label: '权限委托', children: <PermissionDelegationPanel /> },
+        ] : []),
+        ...(perm.has(PERM.IAM_ADMIN) ? [
+          { key: 'risk-findings', label: '风险发现', children: <RiskFindingsPanel /> },
         ] : []),
         ...(perm.has('oa:iam:elevation:approve') ? [
           { key: 'elevation-approval', label: '提权审批', children: <ElevationApprovalPanel /> },

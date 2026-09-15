@@ -1,9 +1,11 @@
 package com.lrj.oa.iam.web;
 
 import com.lrj.oa.common.api.Result;
+import com.lrj.oa.iam.api.dto.AuthzDtos.WhoHasAccessResult;
 import com.lrj.oa.iam.application.GrantService;
 import com.lrj.oa.iam.application.PermissionCatalog;
 import com.lrj.oa.iam.application.PermissionSnapshotBuilder;
+import com.lrj.oa.iam.application.WhoHasAccessService;
 import com.lrj.oa.iam.domain.PermissionSnapshot;
 import com.lrj.oa.iam.infrastructure.cache.PermissionEngine;
 import com.lrj.oa.security.annotation.RequiresPerm;
@@ -25,13 +27,16 @@ public class IamAdminController {
     private final PermissionSnapshotBuilder builder;
     private final PermissionCatalog catalog;
     private final GrantService grantService;
+    private final WhoHasAccessService whoHasAccessService;
 
     public IamAdminController(PermissionEngine engine, PermissionSnapshotBuilder builder,
-                              PermissionCatalog catalog, GrantService grantService) {
+                              PermissionCatalog catalog, GrantService grantService,
+                              WhoHasAccessService whoHasAccessService) {
         this.engine = engine;
         this.builder = builder;
         this.catalog = catalog;
         this.grantService = grantService;
+        this.whoHasAccessService = whoHasAccessService;
     }
 
     /**
@@ -117,6 +122,17 @@ public class IamAdminController {
         out.put("currentlyElevated", truth.isElevated(permId));
         out.put("sources", grantService.explainSources(userId, permCode));
         return Result.ok(out);
+    }
+
+    /**
+     * 资源反查：谁持有这条权限。与 {@code /why} 方向相反，JSON 形状也独立，不改 why/preview/explain。
+     */
+    @GetMapping("/who-has-access")
+    @RequiresPerm("oa:iam:admin")
+    public Result<WhoHasAccessResult> whoHasAccess(@RequestParam(required = false) String permCode,
+                                                   @RequestParam(required = false) String resourceType,
+                                                   @RequestParam(required = false) String resourceId) {
+        return Result.ok(whoHasAccessService.query(permCode, resourceType, resourceId));
     }
 
     @GetMapping("/cache-stats")
