@@ -49,7 +49,7 @@
 
 ## 下一步
 
-S01–S10 可执行验收已过。本轮授权本地提交并推 `origin/main`。live Flyway / 浏览器仍需 `clean install` 后重启。不创建 PR、不发版、不部署。
+S01–S10 已推送 `origin/main`（`0049cd0`）。live Flyway / 浏览器仍需 `clean install` 后重启。不创建 PR、不发版、不部署。
 
 ## Git grants
 

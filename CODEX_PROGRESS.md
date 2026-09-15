@@ -2,11 +2,11 @@
 
 ## 任务目标
 
-把运行中的 oa-platform Brownfield 演进为企业身份与授权治理平台：身份 → 权限数据 → 策略 → 决策 → 授权 → 审计 → 风险 → 生命周期。现有 OA 审批保留为 Access Request / 提权 / 委托工作流，不是产品核心。设计已批准；实现连续推进。不 git commit / push / PR / release / deploy。
+把运行中的 oa-platform Brownfield 演进为企业身份与授权治理平台：身份 → 权限数据 → 策略 → 决策 → 授权 → 审计 → 风险 → 生命周期。现有 OA 审批保留为 Access Request / 提权 / 委托工作流，不是产品核心。设计已批准；S01–S10 已落地并推送。不创建 PR / 不发版 / 不部署。
 
 ## 当前状态
 
-S01–S10 可执行验收已过（live Flyway / 浏览器 UNVERIFIED）。设计范围内切片已全部落地。
+S01–S10 已提交并推送 `origin/main`（`0049cd0`）。live Flyway / 浏览器仍 UNVERIFIED。
 
 ## 已完成
 
@@ -30,4 +30,4 @@ S01–S10 可执行验收已过（live Flyway / 浏览器 UNVERIFIED）。设计
 
 ## 下一步
 
-本轮授权本地提交并推 `origin/main`。live API / 控制台仍需 `clean install` 后重启。不创建 PR、不发版、不部署。
+本轮已提交并推送 `origin/main`：`0049cd0`。live API / 控制台仍需 `clean install` 后重启。不创建 PR、不发版、不部署。
