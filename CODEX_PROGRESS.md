@@ -13,7 +13,7 @@
 - 2026-09-15：知识库表加横向滚动、操作列固定右侧；所有者 UUID 不再 `word-break: break-all`。
 - 2026-09-15：考勤首页改为上班/下班/工时/当日状态，链路指标收到折叠区。
 - 2026-09-15：已重建并 recreate `oa-app`、`oa-console`。oa-console 121 测通过；首屏 gzip 290.4 KB / 300 KB。
-- 2026-09-15：Git 任务分支 `feat/oa-console-pages-and-sql-fixes`（不含 `tmp/` 简历截图）。auth-platform 无本任务未提交改动。
+- 2026-09-15：Git 提交 `ea2a0af` 在任务分支 `feat/oa-console-pages-and-sql-fixes`（不含 `tmp/`）。auth-platform 无本任务未提交改动。
 
 ## 未完成
 
