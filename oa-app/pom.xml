@@ -32,6 +32,8 @@
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-report</artifactId></dependency>
     <dependency><groupId>org.springdoc</groupId><artifactId>springdoc-openapi-starter-webmvc-ui</artifactId></dependency>
     <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><scope>test</scope></dependency>
+    <!-- 仅集成测试连接两个真实实现；治理库不进入 OA 生产制品或业务依赖。 -->
+    <dependency><groupId>com.lrj.authz</groupId><artifactId>auth-platform-governance</artifactId><version>0.1.0-SNAPSHOT</version><scope>test</scope></dependency>
     <!-- 授权立场检查与 API 契约 golden 的规则本体，只此一份，靠 test-jar 分发 -->
     <dependency>
       <groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId>

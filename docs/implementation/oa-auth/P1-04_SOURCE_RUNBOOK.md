@@ -41,5 +41,11 @@ HTTPS 默认必需；隔离直连回环可设置 allow-loopback-http=true，非�
 
 ## 验证
 
-`OA_DIRECTORY_TEST_CONFIG=/private/database.properties mvn -B verify -Pdirectory-it`。
+`OA_DIRECTORY_TEST_CONFIG=/private/source.properties OA_AUTH_DIRECTORY_TEST_CONFIG=/private/governance.properties mvn -B verify -Pdirectory-it`。
 测试仅接受专用隔离命名空间和 0600 配置，保留测试记录，不用 TRUNCATE 重置共享环境。
+
+双库测试依赖 auth b11d080 的 governance 制品（仅 test scope），必须先安装到同一个 Maven 本地仓库。
+真实 IdP 验证另设 `OA_DIRECTORY_IDENTITY_FIXTURE`（专属 casdoor.json/tokens.json 目录）与
+`OA_DIRECTORY_IDENTITY_MANAGEMENT`（隔离实例管理凭据文件），全部私密文件 0600。
+每次完整真实身份链验证使用新专属夹具用户；OA 的 user_id 全局唯一，不通过清空数据、改写历史员工来复用上次已离职用户。
+可用 auth 仓既有 governance-casdoor-fixture.py 在固定隔离 18090 实例创建新 run 目录；不得使用共享 8000 实例或 P1-02 外部负例身份。

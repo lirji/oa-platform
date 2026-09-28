@@ -316,6 +316,139 @@ class IdentityDirectoryPostgresIT {
                         new com.lrj.oa.security.context.ServiceIdentity("oa-directory", tenant), null, List.of()));
     }
 
+    @Test void realOaHttpAndIndependentAuthDatabaseRecoverAckLossThenRevokeOnLeave() throws Exception {
+        directoryEndToEnd(null);
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "OA_DIRECTORY_IDENTITY_FIXTURE", matches = ".+")
+    void realCasdoorTokenLosesOaMembershipAfterSourceLeaveWhileTokenRemainsValid() throws Exception {
+        Path fixturePath = Path.of(System.getenv("OA_DIRECTORY_IDENTITY_FIXTURE"));
+        var fixture = privateJson(fixturePath.resolve("casdoor.json"));
+        var tokens = privateJson(fixturePath.resolve("tokens.json"));
+        var operations = privateJson(Path.of(Objects.requireNonNull(System.getenv("OA_DIRECTORY_IDENTITY_MANAGEMENT"))));
+        assertThat(fixture.path("organization").asText()).matches("gov-p1-[a-f0-9]{12}");
+        var client = fixture.path("clients").path("management");
+        var authority = new com.lrj.authz.governance.authentication.TokenAuthority("http://localhost:18090",
+                java.net.URI.create("http://localhost:18090/.well-known/jwks"), client.path("name").asText(), client.path("name").asText(),
+                client.path("secret").asText(), operations.path("client_id").asText(), operations.path("client_secret").asText(), 2000, 2000, 4);
+        var verifier = new com.lrj.authz.governance.authentication.CasdoorAccessTokenVerifier(authority);
+        String access = tokens.path("management").path("access_token").asText();
+        String subject = fixture.path("users").path("internal").path("id").asText();
+        assertThat(verifier.verify(access).subject()).isEqualTo(subject);
+        assertThatThrownBy(() -> verifier.verify(tokens.path("management").path("id_token").asText()))
+                .isInstanceOf(com.lrj.authz.governance.application.GovernanceException.class);
+        directoryEndToEnd(new DirectoryIdentityFixture(verifier, subject, access));
+    }
+
+    private void directoryEndToEnd(DirectoryIdentityFixture identity) throws Exception {
+        long department = org(null), person = identity == null ? employee(department) : employees.create(new CreateEmployee(identity.subject(),
+                UUID.randomUUID().toString().substring(0, 20), "directory-idp-it", null, null, null, null, null, null, null, null, department, null, null));
+        String subject = jdbc.queryForObject("SELECT user_id FROM oa_org.employee WHERE id=?", String.class, person);
+        initializer.initialize(tenant, "oa", "test", "directory-e2e", 100);
+        String privateConfig = Objects.requireNonNull(System.getenv("OA_AUTH_DIRECTORY_TEST_CONFIG"), "dual database configuration required");
+        var authConfig = com.lrj.authz.governance.application.GovernanceConfigurationFile.read(privateConfig);
+        assertThat(authConfig.getProperty("jdbc.url")).isNotEqualTo(dataSource.getUrl())
+                .matches("jdbc:postgresql://(?:127\\.0\\.0\\.1|localhost):[0-9]+/auth_gov_p1_test_[a-z0-9_]+");
+        String credential = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
+        var settings = new com.lrj.oa.org.infrastructure.directory.IdentityDirectoryExportProperties(true, tenant, "oa", "test",
+                HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(credential.getBytes(java.nio.charset.StandardCharsets.US_ASCII))), true);
+        var exporter = proxy(new IdentityDirectoryExport(directory, settings));
+        var fault = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var application = new org.springframework.boot.SpringApplication(DirectoryHttpHost.class);
+        application.setBannerMode(org.springframework.boot.Banner.Mode.OFF);
+        application.setDefaultProperties(Map.of("server.address", "127.0.0.1", "server.port", "0", "oa.security.mode", "DEV",
+                "spring.main.log-startup-info", "false", "server.forward-headers-strategy", "NONE"));
+        application.addInitializers(context -> {
+            context.getBeanFactory().registerSingleton("directoryExportForTest", exporter);
+            context.getBeanFactory().registerSingleton("directoryLostAckForTest", fault);
+        });
+        try (var auth = com.lrj.authz.governance.persistence.GovernanceRuntime.open(com.lrj.authz.governance.persistence.GovernanceDatabase.from(authConfig), true);
+             var host = application.run("--spring.config.name=directory-e2e-test", "--oa.security.mode=DEV", "--server.port=0", "--server.address=127.0.0.1", "--oa.identity-directory.export.enabled=true", "--oa.identity-directory.export.tenant-id=" + tenant,
+                     "--oa.identity-directory.export.source=oa", "--oa.identity-directory.export.environment=test",
+                     "--oa.identity-directory.export.credential-sha256=" + settings.credentialSha256(), "--oa.identity-directory.export.allow-loopback-http=true")) {
+            int port = ((org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext) host).getWebServer().getPort();
+            String targetTenant = UUID.randomUUID().toString(), seedMember = UUID.randomUUID().toString(), seedSubject = UUID.randomUUID().toString();
+            String issuer = identity == null ? "https://directory-e2e.example" : "http://localhost:18090";
+            var reader = identity == null ? null : new com.lrj.authz.governance.authentication.AuthenticatedIdentityReader(identity.verifier(), auth.identity());
+            auth.identity().bootstrapEmployee(new com.lrj.authz.governance.application.BootstrapCommand(UUID.randomUUID().toString(), "directory-e2e",
+                    targetTenant, "e2e-" + targetTenant, UUID.randomUUID().toString(), issuer, seedSubject, seedMember,
+                    java.time.Instant.parse("2020-01-01T00:00:00Z"), null, "test-seed", targetTenant, "seed"));
+            var authority = new com.lrj.authz.governance.application.DirectoryAuthority(UUID.randomUUID().toString(), "oa", "test", Long.toString(tenant), targetTenant, issuer);
+            var pullConfig = new com.lrj.authz.governance.application.DirectoryPullConfiguration(authority,
+                    java.net.URI.create("http://127.0.0.1:" + port + "/internal/directory/v1"), credential, "directory-e2e", 2, 3000);
+            try (var importer = new com.lrj.authz.governance.application.DirectoryPullImporter(auth.directory(), pullConfig)) {
+                importer.register();
+                assertThatThrownBy(importer::pull).isInstanceOf(com.lrj.authz.governance.application.GovernanceException.class);
+                // HTTP 失败之前两库都已提交；源端确认丢失不触发回滚或重新生成消息。
+                assertThat(auth.directory().checkpoint(authority).lastSequence()).isEqualTo(2);
+                assertThat(directory.source(tenant).ackedSequence()).isEqualTo(2);
+                assertThatThrownBy(() -> auth.identity().contextForLogin(issuer, subject, targetTenant, 1L)).isInstanceOf(com.lrj.authz.governance.application.GovernanceException.class);
+                assertThat(auth.identity().membershipsForLogin(issuer, seedSubject)).extracting("id").contains(seedMember);
+                assertThat(importer.pull().lastSequence()).isEqualTo(4);
+                var joined = auth.identity().contextForLogin(issuer, subject, targetTenant, 1L);
+                assertThat(joined.membershipId()).isNotBlank();
+                if (reader != null) { assertThat(reader.memberships(identity.accessToken())).extracting("id").contains(joined.membershipId()); }
+                assertThat(directory.source(tenant).ackedSequence()).isEqualTo(4);
+                employees.leave(person, LocalDate.now());
+                assertThat(directory.source(tenant).lastSequence()).isEqualTo(5);
+                assertThat(directory.source(tenant).ackedSequence()).isEqualTo(4);
+                assertThat(importer.pull().lastSequence()).isEqualTo(5);
+                assertThat(auth.identity().membershipsForLogin(issuer, subject)).extracting("id").doesNotContain(joined.membershipId());
+                if (reader != null) {
+                    assertThat(identity.verifier().verify(identity.accessToken()).subject()).isEqualTo(subject);
+                    assertThat(reader.memberships(identity.accessToken())).extracting("id").doesNotContain(joined.membershipId());
+                }
+                assertThatThrownBy(() -> auth.identity().contextForLogin(issuer, subject, targetTenant, 1L)).isInstanceOf(com.lrj.authz.governance.application.GovernanceException.class);
+                assertThat(directory.source(tenant).ackedSequence()).isEqualTo(5);
+                assertThat(importer.pull().processed()).isZero();
+                assertThat(auth.identity().membershipsForLogin(issuer, seedSubject)).extracting("id").contains(seedMember);
+            }
+        }
+    }
+
+    private record DirectoryIdentityFixture(com.lrj.authz.governance.authentication.CasdoorAccessTokenVerifier verifier, String subject, String accessToken) {
+        @Override public String toString() { return "DirectoryIdentityFixture[redacted]"; }
+    }
+    private com.fasterxml.jackson.databind.JsonNode privateJson(Path file) throws Exception {
+        assertThat(Files.isSymbolicLink(file)).isFalse();
+        assertThat(Files.getPosixFilePermissions(file)).isEqualTo(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        return JSON.readTree(Files.readString(file));
+    }
+
+    /** 仅测试宿主：真实 Tomcat/MVC/安全链/Controller，排除所有无关基础设施自动连接。 */
+    @org.springframework.context.annotation.Configuration
+    @org.springframework.boot.autoconfigure.EnableAutoConfiguration(exclude = {
+            org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class,
+            org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration.class,
+            org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration.class,
+            org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration.class,
+            org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration.class})
+    @org.springframework.context.annotation.Import({com.lrj.oa.security.config.OaSecurityConfig.class,
+            com.lrj.oa.org.infrastructure.directory.IdentityDirectorySecurityConfiguration.class,
+            com.lrj.oa.org.api.IdentityDirectoryController.class,
+            com.lrj.oa.iam.aspect.IamWebMvcConfig.class, com.lrj.oa.iam.aspect.UnannotatedHandlerGuard.class,
+            com.lrj.oa.common.web.GlobalExceptionHandler.class})
+    static class DirectoryHttpHost {
+        /** 故障只存在测试制品：源确认事务已结束，但向消费者返回 503，证明重试窗口。 */
+        @org.springframework.context.annotation.Bean
+        org.springframework.boot.web.servlet.FilterRegistrationBean<org.springframework.web.filter.OncePerRequestFilter> loseAckResponse(
+                java.util.concurrent.atomic.AtomicBoolean fault) {
+            var filter = new org.springframework.web.filter.OncePerRequestFilter() {
+                @Override protected void doFilterInternal(jakarta.servlet.http.HttpServletRequest request,
+                        jakarta.servlet.http.HttpServletResponse response, jakarta.servlet.FilterChain chain) throws jakarta.servlet.ServletException, java.io.IOException {
+                    var wrapper = new org.springframework.web.util.ContentCachingResponseWrapper(response);
+                    chain.doFilter(request, wrapper);
+                    if (request.getRequestURI().endsWith("/ack") && wrapper.getStatus() == 200 && fault.getAndSet(false)) {
+                        response.reset(); response.setStatus(503); response.getWriter().write("{\"error\":\"test_lost_ack_response\"}");
+                    } else { wrapper.copyBodyToResponse(); }
+                }
+            };
+            var registration = new org.springframework.boot.web.servlet.FilterRegistrationBean<org.springframework.web.filter.OncePerRequestFilter>(filter);
+            registration.addUrlPatterns("/internal/directory/v1/*"); registration.setOrder(-101); return registration;
+        }
+    }
+
     private long org(Long parent) { return orgs.create(new CreateOrg(parent, UUID.randomUUID().toString(), "directory-it", null, "DEPT", null, null, null, null)); }
     private long employee(long org) {
         return employees.create(new CreateEmployee(UUID.randomUUID().toString(), UUID.randomUUID().toString().substring(0, 20),

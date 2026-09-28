@@ -1,0 +1,20 @@
+{
+  "slice": "P1-04",
+  "scope": "real two-database HTTP and IdP tests",
+  "base": "626ecc8368df49c6236da310b5c7959f506009b5",
+  "fingerprint": "7e753094533b4ae82dde93e8f42ed5bfed66fac6b69278a34530a8bae9c1f83c",
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "37290b8492e7676a52b02512673383103f55a47c6b14874eb8de09f2e7e44ee9"
+    },
+    {
+      "path": "oa-app/pom.xml",
+      "sha256": "6bd99626a0af8b4da0808886e15547f2db826a9c625918ef2a5449cf5e58a57c"
+    },
+    {
+      "path": "oa-app/src/test/java/com/lrj/oa/app/IdentityDirectoryPostgresIT.java",
+      "sha256": "1ab9aec712574ca11ee29bc9b6cd75b219bd2188587a686056cd6134eef36c28"
+    }
+  ]
+}
