@@ -12,6 +12,8 @@
   <name>oa-org</name>
   <description>组织域：org_unit/closure/employee/position/assignment/reporting_line + OrgTreeCache + OrgQueryApi</description>
   <dependencies>
+    <!-- 目录出口与 auth 共用无框架依赖的事件协议，版本由既有 BOM 管理。 -->
+    <dependency><groupId>com.lrj.authz</groupId><artifactId>auth-platform-protocol</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-common</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-protocol</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId></dependency>

@@ -81,6 +81,8 @@ GET    /api/v1/report/audit/stats                           oa:report:view
 GET    /api/v1/report/headcount                             oa:report:view
 GET    /api/v1/report/overview                              oa:report:view
 GET    /api/v1/system/ping                                  (public)
+GET    /internal/directory/v1/events                        (service:oa-directory)
+GET    /internal/directory/v1/status                        (service:oa-directory)
 POST   /api/v1/admin-biz/assets/claim                       oa:asset:claim
 POST   /api/v1/admin-biz/assets/{id}/return                 oa:asset:claim
 POST   /api/v1/admin-biz/rooms/bookings                     oa:room:book
@@ -138,6 +140,7 @@ POST   /api/v1/org/seed                                     oa:org:admin
 POST   /api/v1/org/units                                    oa:org:create
 POST   /api/v1/org/units/path-prefixes                      oa:org:view
 POST   /api/v1/report/audit/flush                           oa:report:view
+POST   /internal/directory/v1/ack                           (service:oa-directory)
 PUT    /api/v1/doc/kb/{id}                                  oa:kb:read
 PUT    /api/v1/iam/abac/conditions/{id}                     oa:iam:admin
 PUT    /api/v1/iam/groups/{id}                              oa:iam:admin

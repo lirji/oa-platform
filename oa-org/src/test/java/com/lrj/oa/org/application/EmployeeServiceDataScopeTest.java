@@ -32,7 +32,8 @@ class EmployeeServiceDataScopeTest {
         DataScopeAccessChecker denied = (permission, orgId, path, owner) -> false;
         EmployeeService service = new EmployeeService(employees, assignments,
                 mock(ReportingLineMapper.class), mock(OrgUnitMapper.class), mock(SensitiveCrypto.class),
-                mock(ApplicationEventPublisher.class), tree, denied);
+                mock(ApplicationEventPublisher.class), tree, denied,
+                mock(com.lrj.oa.org.application.directory.IdentityDirectoryPublisher.class));
 
         Employee employee = new Employee();
         employee.setId(99L);

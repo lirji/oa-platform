@@ -7,6 +7,7 @@ import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.org.api.event.EmployeeAssignmentChangedEvent;
 import com.lrj.oa.org.api.event.EmployeeCreatedEvent;
 import com.lrj.oa.org.application.command.OrgCommands;
+import com.lrj.oa.org.application.directory.IdentityDirectoryPublisher;
 import com.lrj.oa.org.domain.*;
 import com.lrj.oa.org.infrastructure.mapper.*;
 import com.lrj.oa.org.infrastructure.cache.OrgTreeCache;
@@ -37,11 +38,12 @@ public class EmployeeService {
     private final ApplicationEventPublisher events;
     private final OrgTreeCache treeCache;
     private final DataScopeAccessChecker dataScope;
+    private final IdentityDirectoryPublisher directory;
 
     public EmployeeService(EmployeeMapper employeeMapper, AssignmentMapper assignmentMapper,
                            ReportingLineMapper reportingLineMapper, OrgUnitMapper orgUnitMapper,
                            SensitiveCrypto crypto, ApplicationEventPublisher events,
-                           OrgTreeCache treeCache, DataScopeAccessChecker dataScope) {
+                           OrgTreeCache treeCache, DataScopeAccessChecker dataScope, IdentityDirectoryPublisher directory) {
         this.employeeMapper = employeeMapper;
         this.assignmentMapper = assignmentMapper;
         this.reportingLineMapper = reportingLineMapper;
@@ -50,10 +52,12 @@ public class EmployeeService {
         this.events = events;
         this.treeCache = treeCache;
         this.dataScope = dataScope;
+        this.directory = directory;
     }
 
     @Transactional
     public Long create(OrgCommands.CreateEmployee cmd) {
+        var directorySource = directory.beforeWrite();
         requireOrgScope("oa:employee:create", cmd.primaryOrgId(), cmd.userId());
         if (orgUnitMapper.selectById(cmd.primaryOrgId()) == null) {
             throw BusinessException.of(ResultCode.ORG_NOT_FOUND, "主岗组织不存在: " + cmd.primaryOrgId());
@@ -95,6 +99,7 @@ public class EmployeeService {
                     cmd.managerEmployeeId(), ReportingType.SOLID.name(), LocalDate.now()));
         }
 
+        directory.employee(directorySource, e.getId());
         events.publishEvent(new EmployeeCreatedEvent(
                 e.getUserId(), e.getId(), e.getName(), e.getEmploymentType(), e.getStatus(),
                 cmd.primaryOrgId(), treeCache.snapshot().pathOf(cmd.primaryOrgId())));
@@ -104,6 +109,7 @@ public class EmployeeService {
 
     @Transactional
     public void update(Long employeeId, OrgCommands.UpdateEmployee cmd) {
+        var directorySource = directory.beforeWrite();
         Employee e = requireScopedEmployee(employeeId, "oa:employee:update");
         if (cmd.name() != null) e.setName(cmd.name());
         if (cmd.enName() != null) e.setEnName(cmd.enName());
@@ -120,6 +126,7 @@ public class EmployeeService {
         if (employeeMapper.updateById(e) == 0) {
             throw BusinessException.of(ResultCode.CONFLICT, "员工信息已被他人修改，请刷新后重试");
         }
+        directory.employee(directorySource, employeeId);
     }
 
     /**
@@ -128,6 +135,7 @@ public class EmployeeService {
      */
     @Transactional
     public void transfer(Long employeeId, OrgCommands.TransferEmployee cmd) {
+        var directorySource = directory.beforeWrite();
         requireScopedEmployee(employeeId, "oa:employee:transfer");
         requireOrgScope("oa:employee:transfer", cmd.targetOrgId(), null);
         if (orgUnitMapper.selectById(cmd.targetOrgId()) == null) {
@@ -148,6 +156,7 @@ public class EmployeeService {
         openAssignment(employeeId, cmd.targetOrgId(), cmd.targetPositionId(),
                 AssignmentType.PRIMARY, Boolean.TRUE.equals(cmd.asLeader()), effective);
         // 数据范围锚定在本人所在组织上，调岗后必须让权限快照跟着失效
+        directory.employee(directorySource, employeeId);
         publishAssignmentChanged(employeeId, "transfer");
         log.info("员工 {} 调岗至组织 {} 生效日 {}（{}）", employeeId, cmd.targetOrgId(), effective, cmd.reason());
     }
@@ -155,6 +164,7 @@ public class EmployeeService {
     /** 加兼岗或虚线归属。主岗请走 {@link #transfer}。 */
     @Transactional
     public Long addAssignment(Long employeeId, OrgCommands.AddAssignment cmd) {
+        var directorySource = directory.beforeWrite();
         requireScopedEmployee(employeeId, "oa:employee:transfer");
         requireOrgScope("oa:employee:transfer", cmd.orgUnitId(), null);
         AssignmentType type;
@@ -173,12 +183,14 @@ public class EmployeeService {
         Long id = openAssignment(employeeId, cmd.orgUnitId(), cmd.positionId(), type,
                 Boolean.TRUE.equals(cmd.asLeader()),
                 cmd.validFrom() == null ? LocalDate.now() : cmd.validFrom());
+        directory.employee(directorySource, employeeId);
         publishAssignmentChanged(employeeId, "addAssignment");
         return id;
     }
 
     @Transactional
     public void closeAssignment(Long assignmentId, LocalDate validTo) {
+        var directorySource = directory.beforeWrite();
         EmployeeOrgAssignment a = assignmentMapper.selectById(assignmentId);
         if (a == null || !a.active()) {
             throw BusinessException.of(ResultCode.NOT_FOUND, "任职关系不存在或已关闭: " + assignmentId);
@@ -189,17 +201,20 @@ public class EmployeeService {
             throw BusinessException.of(ResultCode.CONFLICT, "不能直接关闭主岗，请走调岗或离职");
         }
         assignmentMapper.close(assignmentId, validTo == null ? LocalDate.now() : validTo);
+        directory.employee(directorySource, a.getEmployeeId());
         publishAssignmentChanged(a.getEmployeeId(), "closeAssignment");
     }
 
     @Transactional
     public void setReportingLine(Long employeeId, OrgCommands.SetReportingLine cmd) {
+        var directorySource = directory.beforeWrite();
         requireScopedEmployee(employeeId, "oa:employee:transfer");
         if (employeeId.equals(cmd.managerEmployeeId())) {
             throw BusinessException.of(ResultCode.BAD_REQUEST, "不能把自己设为自己的上级");
         }
         requireScopedEmployee(cmd.managerEmployeeId(), "oa:employee:transfer");
         writeReportingLine(employeeId, cmd);
+        directory.employee(directorySource, employeeId);
     }
 
     private void writeReportingLine(Long employeeId, OrgCommands.SetReportingLine cmd) {
@@ -236,6 +251,7 @@ public class EmployeeService {
     /** 离职。关闭全部任职与汇报线，员工置 LEFT；行一律不删。 */
     @Transactional
     public void leave(Long employeeId, LocalDate leaveDate) {
+        var directorySource = directory.beforeWrite();
         Employee e = requireScopedEmployee(employeeId, "oa:employee:leave");
         LocalDate day = leaveDate == null ? LocalDate.now() : leaveDate;
         assignmentMapper.selectActiveByEmployee(employeeId)
@@ -246,10 +262,13 @@ public class EmployeeService {
         e.setLeaveDate(day);
         e.setUpdatedBy(currentUser());
         e.setUpdatedAt(OffsetDateTime.now());
-        employeeMapper.updateById(e);
+        if (employeeMapper.updateById(e) != 1) {
+            throw BusinessException.of(ResultCode.CONFLICT, "员工状态已变化，离职操作未提交");
+        }
+        directory.employee(directorySource, employeeId);
         // 离职是收权动作：连带撤销该账号的全部授权（oa-iam 侧监听处理）
         events.publishEvent(EmployeeAssignmentChangedEvent.left(e.getUserId()));
-        log.info("员工 {} 离职，生效日 {}，已触发授权回收", employeeId, day);
+        log.info("员工 {} 离职事实已写入本地事务，生效日 {}；跨平台权限回收等待目录确认", employeeId, day);
     }
 
     // ───────────────────────────────────────────── 内部

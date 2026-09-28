@@ -1,0 +1,128 @@
+{
+  "slice": "P1-04",
+  "scope": "OA source pass only",
+  "base": "f07c97893238cd97bab38a140b5f6946184d4459",
+  "fingerprint": "26d620f48914080d02624f782cfbcbcf0dc4f7a25b11701ccaa98048bae009a7",
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "d7760037eb00fb00d48a20070e02e5ad9fa51c154776ba42d856b425f57eb04c"
+    },
+    {
+      "path": "oa-app/pom.xml",
+      "sha256": "b3abe4e15e6515b9133851f2863897e05a42535c5b7807e75257307a45d307a2"
+    },
+    {
+      "path": "oa-app/src/test/java/com/lrj/oa/app/ControllerPermissionCoverageTest.java",
+      "sha256": "6623349a9349ad032fce823f197ca1f9f0ad2234dcb95f1d50e6bb31a02abb17"
+    },
+    {
+      "path": "oa-app/src/test/java/com/lrj/oa/app/IdentityDirectoryHttpTest.java",
+      "sha256": "920cc71646bb04b34811e4ecf8eeb2e31494233049bb994dc7bce812410274e5"
+    },
+    {
+      "path": "oa-app/src/test/java/com/lrj/oa/app/IdentityDirectoryPostgresIT.java",
+      "sha256": "0a977bfac91d14acf26667ccaa2c4f5993d509034b2426ae379829495994f5e6"
+    },
+    {
+      "path": "oa-app/src/test/resources/api-surface.golden",
+      "sha256": "e1c02ed4ff43e4ddf01d3f100e64dde4a565387183ab76a56a3f33d29897c153"
+    },
+    {
+      "path": "oa-app/src/test/resources/data-access-surface.golden",
+      "sha256": "52275162238a835b515f612d83b6b6c778e38d7344a824737cc8ca69af01e4d9"
+    },
+    {
+      "path": "oa-iam/src/main/java/com/lrj/oa/iam/aspect/UnannotatedHandlerGuard.java",
+      "sha256": "c9f19cfcfd08f99ee953eee888c60fb00ca9e576db8e46eb381415a678d7d76f"
+    },
+    {
+      "path": "oa-org/pom.xml",
+      "sha256": "28fbf59fa7fe7559718ed30b50a6ab608863bffebb8abfaccf7b5803658cf94b"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/api/IdentityDirectoryAcknowledgement.java",
+      "sha256": "a5a721ef5d0b7f9c936b7285a766be74b735e90a6010d12adb53eadb9c13a2de"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/api/IdentityDirectoryController.java",
+      "sha256": "c02e0709ca42a3a9bcc6c8adfe4d4e25163fb093a236835ae0a1a6679abae37c"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/application/EmployeeService.java",
+      "sha256": "3d3d7d5861e5796b7b2df842a4e9faa35b01b66243c4e34ff7b89856ae6fbb7f"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/application/OrgSeedService.java",
+      "sha256": "9312e9223e5293e771533d4e625cd7f93c2a42646dfc57f0973cda191cda7a9e"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/application/OrgUnitService.java",
+      "sha256": "ac6cdac471144d09169a078d8dd5e09c23a9d55a30ac56548d374cf1167a2cc3"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/application/directory/IdentityDirectoryExport.java",
+      "sha256": "5f8fd3e92ca54f848ac842589b5fa6a374b69e5c053d5b1f4334468e85b1792b"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/application/directory/IdentityDirectoryInitializer.java",
+      "sha256": "bc01259adfd7260275da6c48ce2c8c5ed3e8bd5c32d6308fcd41863c23398f45"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/application/directory/IdentityDirectoryPublisher.java",
+      "sha256": "14b84ce3066c0e612817dc8e2f4c11c8835feb85ac1454194d7ae59f61ed651f"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/domain/IdentityDirectoryModels.java",
+      "sha256": "5340ef0129983d54278d2d1d25c399e3064e750ed7c9267ff82d26c89d76af9b"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/infrastructure/directory/IdentityDirectoryAdminCli.java",
+      "sha256": "a8824d626630fdb5370e5cab15e33cd8de4768fa1241dfdfb43d160f876c3492"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/infrastructure/directory/IdentityDirectoryExportProperties.java",
+      "sha256": "b035f591317346773e4d1f69481bca1960653c2fa5981eb92278a0b94011944b"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/infrastructure/directory/IdentityDirectorySecurityConfiguration.java",
+      "sha256": "16bce4f79d56f5415483db9985c609c4c575176bacf3ea69d18c9735127ec361"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/infrastructure/mapper/IdentityDirectoryBulkGuard.java",
+      "sha256": "e01176b2c3de1037c65491d884eb2e1a83d8f8a149a563848451ce9ed21df259"
+    },
+    {
+      "path": "oa-org/src/main/java/com/lrj/oa/org/infrastructure/mapper/IdentityDirectoryMapper.java",
+      "sha256": "3a296a1d46c40398bfb61a0cf6ff38f2cde56d7991ca8915b35043c2b5c95098"
+    },
+    {
+      "path": "oa-org/src/main/resources/db/migration/V8__identity_directory_outbox.sql",
+      "sha256": "93ce6e157cb41ed32dfacf4f2ac1cb2d163666740061004165d208b4d0a1ba04"
+    },
+    {
+      "path": "oa-org/src/main/resources/mapper/directory/IdentityDirectoryMapper.xml",
+      "sha256": "ffe808ce717485fa76bd8152eb039492d8ca866d828576465e84f079f00c4f2b"
+    },
+    {
+      "path": "oa-org/src/test/java/com/lrj/oa/org/application/EmployeeServiceDataScopeTest.java",
+      "sha256": "6c2cc683aa078e9399b2cfa04150f92610d4070a4265827bde1f4a16185741bf"
+    },
+    {
+      "path": "oa-security/src/main/java/com/lrj/oa/security/annotation/RequiresServiceIdentity.java",
+      "sha256": "96bdd9e86137379b5c9a85f3d9487e726feb5209652271e8ad78e898b0cc9bba"
+    },
+    {
+      "path": "oa-security/src/main/java/com/lrj/oa/security/context/ServiceIdentity.java",
+      "sha256": "089c87cfbcb0f9e7bc0383ea71cd5e64a0b4bc64796f4ac9248f04ee92f58c5d"
+    },
+    {
+      "path": "oa-security/src/test/java/com/lrj/oa/security/archrule/ApiSurfaceGolden.java",
+      "sha256": "780e225bbc0ff18f624f9f4564651ab574688de7333bc9db7034168f2716da47"
+    },
+    {
+      "path": "oa-security/src/test/java/com/lrj/oa/security/archrule/ControllerAuthorizationStance.java",
+      "sha256": "8266b2637ee60892fd2d53636c17da1cd5a8a933dd9ccec5ba403d1852ddc09e"
+    }
+  ]
+}

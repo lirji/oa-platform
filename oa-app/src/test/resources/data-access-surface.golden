@@ -29,6 +29,12 @@ com.lrj.oa.org.application.DirectoryService#changedSince SCOPED oa:employee:view
 com.lrj.oa.org.application.DirectoryService#countVisible SCOPED oa:employee:view oa_org.v_employee_directory org t
 com.lrj.oa.org.application.DirectoryService#page SCOPED oa:employee:view oa_org.v_employee_directory org t
 com.lrj.oa.org.application.DirectoryService#search SCOPED oa:employee:view oa_org.v_employee_directory org t
+com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryMapper#assignments BYPASS - oa_org.employee_org_assignment - -
+com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryMapper#employee BYPASS - oa_org.employee - -
+com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryMapper#employees BYPASS - oa_org.employee - -
+com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryMapper#organization BYPASS - oa_org.org_unit - -
+com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryMapper#organizations BYPASS - oa_org.org_unit - -
+com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryMapper#reportingLines BYPASS - oa_org.reporting_line - -
 com.lrj.oa.report.application.DashboardService#approvalEfficiency SCOPED oa:report:view oa_sys.v_approval_efficiency_scoped report a
 com.lrj.oa.report.application.DashboardService#assetSummary SCOPED oa:report:view oa_sys.v_asset_summary_scoped report a
 com.lrj.oa.report.application.DashboardService#attendanceSummary SCOPED oa:report:view oa_sys.v_attendance_summary_scoped report a

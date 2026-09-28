@@ -1,6 +1,7 @@
 package com.lrj.oa.security.archrule;
 
 import com.lrj.oa.security.annotation.PublicApi;
+import com.lrj.oa.security.annotation.RequiresServiceIdentity;
 import com.lrj.oa.security.annotation.RequiresPerm;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaMethod;
@@ -144,6 +145,11 @@ public final class ApiSurfaceGolden {
     }
 
     private static String stanceOf(JavaMethod m) {
+        RequiresServiceIdentity service = m.isAnnotatedWith(RequiresServiceIdentity.class)
+                ? m.getAnnotationOfType(RequiresServiceIdentity.class)
+                : m.getOwner().isAnnotatedWith(RequiresServiceIdentity.class)
+                    ? m.getOwner().getAnnotationOfType(RequiresServiceIdentity.class) : null;
+        if (service != null) { return "(service:" + service.value() + ")"; }
         RequiresPerm rp = m.isAnnotatedWith(RequiresPerm.class)
                 ? m.getAnnotationOfType(RequiresPerm.class)
                 : m.getOwner().isAnnotatedWith(RequiresPerm.class)

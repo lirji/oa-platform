@@ -1,6 +1,7 @@
 package com.lrj.oa.app;
 
 import com.lrj.oa.security.annotation.PublicApi;
+import com.lrj.oa.security.annotation.RequiresServiceIdentity;
 import com.lrj.oa.security.annotation.RequiresPerm;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaMethod;
@@ -46,7 +47,8 @@ class ControllerPermissionCoverageTest {
 
         assertThat(violations)
                 .as("""
-                    以下 handler 未声明授权立场。修法二选一：
+                    以下 handler 未声明授权立场。根据真实授权方式声明：
+                      · 固定服务身份 -> @RequiresServiceIdentity（专用认证链与运行时身份校验）
                       · 需要权限   -> @RequiresPerm("oa:xxx:yyy")
                       · 确定要公开 -> @PublicApi(reason = "为什么可以公开")
                     不要为了让构建过去而随手加 @PublicApi —— 它是会被安全审计 grep 的。""")
@@ -75,7 +77,9 @@ class ControllerPermissionCoverageTest {
 
     /** 注解可以打在方法上，也可以打在整个 Controller 上（整类同一立场）。 */
     private static boolean declaresStance(JavaMethod m) {
-        return m.isAnnotatedWith(RequiresPerm.class)
+        return m.isAnnotatedWith(RequiresServiceIdentity.class)
+                || m.getOwner().isAnnotatedWith(RequiresServiceIdentity.class)
+                || m.isAnnotatedWith(RequiresPerm.class)
                 || m.isAnnotatedWith(PublicApi.class)
                 || m.getOwner().isAnnotatedWith(RequiresPerm.class)
                 || m.getOwner().isAnnotatedWith(PublicApi.class);

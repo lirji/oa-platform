@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +17,18 @@ jobs:
   backend:
     name: Backend / JDK 21
     runs-on: ubuntu-latest
+    services:
+      directory-postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: auth_gov_p1_test_ci
+          POSTGRES_USER: directory_ci
+          POSTGRES_PASSWORD: directory-ci-isolated-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U directory_ci -d auth_gov_p1_test_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -25,6 +38,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: lirji/auth-platform
+          ref: fd03979b1a996d2626215be55f60734508c6d7d9 # P1-04 共享目录协议，不依赖浮动 main
           path: .ci-deps/auth-platform
       - uses: actions/setup-java@v4
         with:
@@ -35,8 +49,19 @@ jobs:
         run: mvn -B -q -f .ci-deps/workflow-platform/pom.xml -pl workflow-platform-sdk -am install -DskipTests
       - name: Install auth SDK
         run: mvn -B -q -f .ci-deps/auth-platform/pom.xml -pl auth-platform-sdk -am install -DskipTests
-      - name: Test backend reactor
-        run: mvn -B test
+      - name: Prepare isolated directory test configuration
+        run: |
+          umask 077
+          mkdir -p .local/directory-ci
+          cat > .local/directory-ci/database.properties <<'CONFIG'
+          jdbc.url=jdbc:postgresql://127.0.0.1:5432/auth_gov_p1_test_ci
+          jdbc.username=directory_ci
+          jdbc.password=directory-ci-isolated-only
+          CONFIG
+      - name: Test backend reactor and real directory transactions
+        env:
+          OA_DIRECTORY_TEST_CONFIG: ${{ github.workspace }}/.local/directory-ci/database.properties
+        run: mvn -B verify -Pdirectory-it
       - name: Validate Docker deployment contract
         run: docker compose -p oa-platform -f deploy/docker-compose.yml --profile apps config -q
 

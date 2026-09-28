@@ -5,6 +5,7 @@ import com.lrj.oa.common.context.TenantContext;
 import com.lrj.oa.common.exception.BusinessException;
 import com.lrj.oa.org.api.event.OrgTreeChangedEvent;
 import com.lrj.oa.org.application.command.OrgCommands;
+import com.lrj.oa.org.application.directory.IdentityDirectoryPublisher;
 import com.lrj.oa.org.domain.OrgStatus;
 import com.lrj.oa.org.domain.OrgUnit;
 import com.lrj.oa.org.domain.OrgUnitType;
@@ -39,18 +40,21 @@ public class OrgUnitService {
     private final OrgUnitMapper orgUnitMapper;
     private final OrgClosureMapper closureMapper;
     private final ApplicationEventPublisher events;
+    private final IdentityDirectoryPublisher directory;
 
     public OrgUnitService(OrgUnitMapper orgUnitMapper, OrgClosureMapper closureMapper,
-                          ApplicationEventPublisher events) {
+                          ApplicationEventPublisher events, IdentityDirectoryPublisher directory) {
         this.orgUnitMapper = orgUnitMapper;
         this.closureMapper = closureMapper;
         this.events = events;
+        this.directory = directory;
     }
 
     // ───────────────────────────────────────────── 新增
 
     @Transactional
     public Long create(OrgCommands.CreateOrg cmd) {
+        var directorySource = directory.beforeWrite();
         OrgUnitType type = parseType(cmd.type());
         OrgUnit parent = null;
         if (cmd.parentId() != null) {
@@ -97,6 +101,7 @@ public class OrgUnitService {
             closureMapper.insertForNewChild(u.getId(), parent.getId());
         }
 
+        directory.organization(directorySource, u.getId());
         touchTree("create", u.getId());
         log.info("新建组织 id={} code={} path={} depth={}", u.getId(), u.getCode(), path, u.getDepth());
         return u.getId();
@@ -112,6 +117,7 @@ public class OrgUnitService {
      */
     @Transactional
     public void move(Long orgId, Long newParentId) {
+        var directorySource = directory.beforeWrite();
         OrgUnit org = requireOrg(orgId);
 
         if (orgId.equals(newParentId)) {
@@ -157,6 +163,7 @@ public class OrgUnitService {
             throw BusinessException.of(ResultCode.CONFLICT, "组织已被他人修改，请刷新后重试");
         }
 
+        directory.organization(directorySource, orgId);
         touchTree("move", orgId);
         log.info("移动组织 id={} {} -> {} (断开{}边/新建{}边/平移{}个节点/深度{}{})",
                 orgId, oldPath, newPath, detached, attached, shifted,
@@ -167,6 +174,7 @@ public class OrgUnitService {
 
     @Transactional
     public void update(Long orgId, OrgCommands.UpdateOrg cmd) {
+        var directorySource = directory.beforeWrite();
         OrgUnit org = requireOrg(orgId);
         if (cmd.name() != null) org.setName(cmd.name());
         if (cmd.shortName() != null) org.setShortName(cmd.shortName());
@@ -182,6 +190,7 @@ public class OrgUnitService {
             throw BusinessException.of(ResultCode.CONFLICT, "组织已被他人修改，请刷新后重试");
         }
         // 名称/排序也会影响内存快照（前端树的显示顺序），同样要刷新
+        directory.organization(directorySource, orgId);
         touchTree("update", orgId);
     }
 
@@ -190,6 +199,7 @@ public class OrgUnitService {
      */
     @Transactional
     public void dissolve(Long orgId) {
+        var directorySource = directory.beforeWrite();
         OrgUnit org = requireOrg(orgId);
         int children = orgUnitMapper.countActiveChildren(orgId);
         if (children > 0) {
@@ -206,6 +216,7 @@ public class OrgUnitService {
         if (orgUnitMapper.updateById(org) == 0) {
             throw BusinessException.of(ResultCode.CONFLICT, "组织已被他人修改，请刷新后重试");
         }
+        directory.organization(directorySource, orgId);
         touchTree("dissolve", orgId);
         log.info("撤销组织 id={} code={}", orgId, org.getCode());
     }

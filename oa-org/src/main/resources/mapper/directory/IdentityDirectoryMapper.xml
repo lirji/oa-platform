@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryMapper">
+    <sql id="sourceColumns">tenant_id, source, environment, last_sequence, acked_sequence, acked_fingerprint, initialized</sql>
+    <!-- 全域登记门闩只保护捕获能力接管与批量旁路，不把全部企业写操作串行化。 -->
+    <select id="tryCaptureGate" resultType="boolean">SELECT pg_try_advisory_xact_lock_shared(7140310401)</select>
+    <select id="tryRegistrationGate" resultType="boolean">SELECT pg_try_advisory_xact_lock(7140310401)</select>
+    <select id="lockSource" resultType="com.lrj.oa.org.domain.IdentityDirectoryModels$Source">
+        SELECT <include refid="sourceColumns"/> FROM oa_org.identity_directory_source WHERE tenant_id = #{tenant} FOR UPDATE NOWAIT
+    </select>
+    <select id="source" resultType="com.lrj.oa.org.domain.IdentityDirectoryModels$Source">
+        SELECT <include refid="sourceColumns"/> FROM oa_org.identity_directory_source WHERE tenant_id = #{tenant}
+    </select>
+    <select id="anyRegisteredSource" resultType="boolean">SELECT EXISTS (SELECT 1 FROM oa_org.identity_directory_source)</select>
+    <insert id="register">
+        INSERT INTO oa_org.identity_directory_source(tenant_id, source, environment, registered_by)
+        VALUES (#{tenant}, #{source}, #{environment}, #{operator}) ON CONFLICT DO NOTHING
+    </insert>
+    <select id="nextSequence" resultType="long" affectData="true" flushCache="true">
+        UPDATE oa_org.identity_directory_source SET last_sequence = last_sequence + 1
+        WHERE tenant_id = #{tenant} AND last_sequence &lt; 9223372036854775807 RETURNING last_sequence
+    </select>
+    <insert id="ensureVersion">
+        INSERT INTO oa_org.identity_directory_version(tenant_id, aggregate_type, aggregate_id, version)
+        VALUES (#{tenant}, #{type}, #{id}, 1) ON CONFLICT DO NOTHING
+    </insert>
+    <update id="incrementVersion">
+        UPDATE oa_org.identity_directory_version SET version = version + 1
+        WHERE tenant_id = #{tenant} AND aggregate_type = #{type} AND aggregate_id = #{id} AND version &lt; 9223372036854775807
+    </update>
+    <select id="version" resultType="long">
+        SELECT version FROM oa_org.identity_directory_version WHERE tenant_id = #{tenant} AND aggregate_type = #{type} AND aggregate_id = #{id}
+    </select>
+    <select id="employee" resultType="com.lrj.oa.org.domain.IdentityDirectoryModels$EmployeeFact">
+        SELECT id, user_id, status FROM oa_org.employee WHERE tenant_id = #{tenant} AND id = #{id}
+    </select>
+    <select id="organization" resultType="com.lrj.oa.org.domain.IdentityDirectoryModels$OrganizationFact">
+        SELECT id, parent_id, status FROM oa_org.org_unit WHERE tenant_id = #{tenant} AND id = #{id}
+    </select>
+    <select id="assignments" resultType="com.lrj.authz.protocol.DirectoryEvents$Assignment">
+        SELECT id::text, org_unit_id::text AS org_id, assignment_type AS type, is_leader AS leader,
+            to_char(valid_from, 'YYYY-MM-DD') AS valid_from, to_char(valid_to, 'YYYY-MM-DD') AS valid_to
+        FROM oa_org.employee_org_assignment WHERE tenant_id = #{tenant} AND employee_id = #{employee}
+            AND (valid_to IS NULL OR valid_to &gt; #{today}) ORDER BY id LIMIT 101
+    </select>
+    <select id="reportingLines" resultType="com.lrj.authz.protocol.DirectoryEvents$ReportingLine">
+        SELECT id::text, manager_employee_id::text, type, to_char(valid_from, 'YYYY-MM-DD') AS valid_from,
+            to_char(valid_to, 'YYYY-MM-DD') AS valid_to
+        FROM oa_org.reporting_line WHERE tenant_id = #{tenant} AND employee_id = #{employee}
+            AND (valid_to IS NULL OR valid_to &gt; #{today}) ORDER BY id LIMIT 101
+    </select>
+    <insert id="append">
+        INSERT INTO oa_org.identity_directory_outbox(tenant_id, partition_sequence, event_id, aggregate_type, aggregate_id,
+            aggregate_version, snapshot_id, fingerprint, event_json)
+        VALUES (#{tenant}, #{sequence}, #{event}, #{type}, #{aggregate}, #{version}, #{snapshot}, #{fingerprint}, CAST(#{json} AS jsonb))
+    </insert>
+    <update id="initialized">
+        UPDATE oa_org.identity_directory_source SET initialized = true WHERE tenant_id = #{tenant} AND NOT initialized
+    </update>
+    <select id="employees" resultType="long">
+        SELECT id FROM oa_org.employee WHERE tenant_id = #{tenant} ORDER BY id LIMIT #{limit}
+    </select>
+    <select id="organizations" resultType="long">
+        SELECT id FROM oa_org.org_unit WHERE tenant_id = #{tenant} ORDER BY depth, id LIMIT #{limit}
+    </select>
+    <select id="events" resultType="com.lrj.oa.org.domain.IdentityDirectoryModels$Outbox">
+        SELECT partition_sequence, fingerprint, event_json::text FROM oa_org.identity_directory_outbox
+        WHERE tenant_id = #{tenant} AND partition_sequence > #{after} ORDER BY partition_sequence LIMIT #{limit}
+    </select>
+    <select id="fingerprint" resultType="string">
+        SELECT fingerprint FROM oa_org.identity_directory_outbox WHERE tenant_id = #{tenant} AND partition_sequence = #{sequence}
+    </select>
+    <update id="acknowledge">
+        UPDATE oa_org.identity_directory_source SET acked_sequence = #{sequence}, acked_fingerprint = #{fingerprint}
+        WHERE tenant_id = #{tenant} AND acked_sequence &lt; #{sequence} AND last_sequence >= #{sequence}
+            AND EXISTS (SELECT 1 FROM oa_org.identity_directory_outbox o WHERE o.tenant_id = #{tenant}
+                AND o.partition_sequence = #{sequence} AND o.fingerprint = #{fingerprint})
+    </update>
+</mapper>

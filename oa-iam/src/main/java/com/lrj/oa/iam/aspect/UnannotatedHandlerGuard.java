@@ -2,6 +2,8 @@ package com.lrj.oa.iam.aspect;
 
 import com.lrj.oa.security.annotation.PublicApi;
 import com.lrj.oa.security.annotation.RequiresPerm;
+import com.lrj.oa.security.annotation.RequiresServiceIdentity;
+import com.lrj.oa.security.context.ServiceIdentity;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -36,6 +38,14 @@ public class UnannotatedHandlerGuard implements HandlerInterceptor {
         // 框架自带端点（actuator、swagger、错误页）不在管辖范围
         String pkg = hm.getBeanType().getPackageName();
         if (!pkg.startsWith("com.lrj.oa")) return true;
+
+        RequiresServiceIdentity service = AnnotatedElementUtils.findMergedAnnotation(hm.getMethod(), RequiresServiceIdentity.class);
+        if (service == null) { service = AnnotatedElementUtils.findMergedAnnotation(hm.getBeanType(), RequiresServiceIdentity.class); }
+        if (service != null) {
+            // 服务声明不是 PublicApi 豁免；即使员工拥有全部权限也不能满足该身份类型。
+            ServiceIdentity.require(service.value());
+            return true;
+        }
 
         boolean declared = AnnotatedElementUtils.hasAnnotation(hm.getMethod(), RequiresPerm.class)
                 || AnnotatedElementUtils.hasAnnotation(hm.getMethod(), PublicApi.class)

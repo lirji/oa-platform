@@ -2,6 +2,7 @@ package com.lrj.oa.org.application;
 
 import com.lrj.oa.org.api.event.OrgTreeChangedEvent;
 import com.lrj.oa.org.infrastructure.mapper.OrgUnitMapper;
+import com.lrj.oa.org.infrastructure.mapper.IdentityDirectoryBulkGuard;
 import org.postgresql.PGConnection;
 import org.postgresql.copy.CopyManager;
 import org.slf4j.Logger;
@@ -57,6 +58,7 @@ public class OrgSeedService {
         long t0 = System.nanoTime();
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
+            IdentityDirectoryBulkGuard.requireUnmanaged(conn);
             CopyManager copy = conn.unwrap(PGConnection.class).getCopyAPI();
 
             List<Long> orgIds = reserveIds(conn, "oa_org.org_unit_id_seq", orgCount);
@@ -267,10 +269,13 @@ public class OrgSeedService {
     /** 清空组织域全部数据（仅供冒烟脚本重置环境）。 */
     public void truncateAll() {
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+            conn.setAutoCommit(false);
+            IdentityDirectoryBulkGuard.requireUnmanaged(conn);
             st.execute("""
                 TRUNCATE oa_org.reporting_line, oa_org.employee_org_assignment,
                          oa_org.employee, oa_org.org_closure, oa_org.org_unit RESTART IDENTITY CASCADE
                 """);
+            conn.commit();
             orgUnitMapper.bumpTreeVersion();
             events.publishEvent(OrgTreeChangedEvent.bulk("truncate"));
         } catch (Exception e) {
