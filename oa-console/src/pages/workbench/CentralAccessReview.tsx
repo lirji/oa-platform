@@ -12,11 +12,11 @@ interface Basis {
 const scopeLabels: Record<string, string> = { TENANT_ALL: '当前企业全部资源', SPECIFIED_STORES: '指定门店', SPECIFIED_RESOURCES: '指定资源' }
 
 /** 审批前读取任务实际指派下的固定申请，不从待办摘要或客户端参数重建授权内容。 */
-export function CentralAccessReview({ task, busy, close, complete, permissionVersion }: {
+export function CentralAccessReview({ task, busy, close, complete, permissionVersion: permVersion }: {
   task: string; busy: boolean; close: () => void; complete: (outcome: 'APPROVE' | 'REJECT') => void; permissionVersion: unknown
 }) {
   // 快照不可变；切回标签页不触发按钮瞬时禁用，权限版本变化或手动刷新仍重新读取。
-  const basis = useQuery({ queryKey: ['central-access-review', task, permissionVersion], queryFn: async () =>
+  const basis = useQuery({ queryKey: ['central-access-review', task, permVersion], queryFn: async () =>
     (await apiClient.get(`/api/v1/flow/central-access/tasks/${encodeURIComponent(task)}`)).data.data as Basis, retry: false, staleTime: 0, gcTime: 0, refetchOnWindowFocus: false })
   const data = !basis.error ? basis.data : undefined
   return <Drawer title="权限申请审批依据" open width={660} onClose={() => { if (!busy) close() }} extra={<Button onClick={() => void basis.refetch()}>刷新依据</Button>}>
