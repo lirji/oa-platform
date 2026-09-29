@@ -20,6 +20,7 @@ GET    /api/v1/doc/kb/{id}                                  oa:kb:read
 GET    /api/v1/doc/kb/{id}/explain                          oa:kb:share
 GET    /api/v1/doc/official                                 oa:doc:read
 GET    /api/v1/flow/admin/status                            oa:flow:admin
+GET    /api/v1/flow/central-access/tasks/{taskId}           oa:flow:todo:view
 GET    /api/v1/flow/docs/mine                               oa:doc-flow:submit
 GET    /api/v1/flow/docs/types                              oa:doc-flow:submit
 GET    /api/v1/flow/leave/balances                          oa:leave:apply
@@ -141,6 +142,8 @@ POST   /api/v1/org/units                                    oa:org:create
 POST   /api/v1/org/units/path-prefixes                      oa:org:view
 POST   /api/v1/report/audit/flush                           oa:report:view
 POST   /internal/directory/v1/ack                           (service:oa-directory)
+POST   /internal/iam-approval/v1/lookup                     (service:auth-platform)
+POST   /internal/iam-approval/v1/start                      (service:auth-platform)
 PUT    /api/v1/doc/kb/{id}                                  oa:kb:read
 PUT    /api/v1/iam/abac/conditions/{id}                     oa:iam:admin
 PUT    /api/v1/iam/groups/{id}                              oa:iam:admin

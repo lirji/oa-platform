@@ -26,7 +26,13 @@ public interface TodoMapper {
                 assignee_user_id = excluded.assignee_user_id,
                 candidate_group  = excluded.candidate_group,
                 title            = excluded.title,
-                summary          = excluded.summary
+                summary          = excluded.summary,
+                instance_id      = coalesce(oa_flow.todo_item.instance_id, excluded.instance_id),
+                biz_type         = coalesce(oa_flow.todo_item.biz_type, excluded.biz_type),
+                applicant_user_id = coalesce(oa_flow.todo_item.applicant_user_id, excluded.applicant_user_id),
+                applicant_name   = coalesce(oa_flow.todo_item.applicant_name, excluded.applicant_name),
+                org_id           = coalesce(oa_flow.todo_item.org_id, excluded.org_id),
+                org_path         = coalesce(oa_flow.todo_item.org_path, excluded.org_path)
             """)
     int upsert(TodoUpsert cmd);
 

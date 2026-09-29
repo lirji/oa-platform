@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper">
+ <insert id="reserve">INSERT INTO oa_flow.central_access_request(request_id,request_version,snapshot_hash,payload_hash,payload_json)
+ VALUES(#{id},#{version},#{hash},#{payloadHash},#{payload}) ON CONFLICT DO NOTHING</insert>
+ <select id="lock" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT request_id,request_version,snapshot_hash,payload_hash,payload_json,instance_id FROM oa_flow.central_access_request WHERE request_id=#{id} FOR UPDATE</select>
+ <select id="find" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT request_id,request_version,snapshot_hash,payload_hash,payload_json,instance_id FROM oa_flow.central_access_request WHERE request_id=#{id}</select>
+ <select id="findBusiness" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT r.request_id,r.request_version,r.snapshot_hash,r.payload_hash,r.payload_json,r.instance_id
+ FROM oa_flow.central_access_request r JOIN oa_flow.approval_instance i ON i.id=r.instance_id WHERE i.business_key=#{business} AND i.biz_type='CENTRAL_ACCESS'</select>
+ <update id="bind">UPDATE oa_flow.central_access_request SET instance_id=#{instance} WHERE request_id=#{id} AND instance_id IS NULL</update>
+ <insert id="nonce">INSERT INTO oa_flow.central_approval_nonce(nonce) VALUES(#{nonce}) ON CONFLICT DO NOTHING</insert>
+ <select id="terminals" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Terminal">
+ SELECT r.payload_json,i.id instance_id,i.outcome,n.actor_user_id,n.on_behalf_of,n.action,n.acted_at
+ FROM oa_flow.central_access_request r JOIN oa_flow.approval_instance i ON i.id=r.instance_id
+ JOIN LATERAL (SELECT actor_user_id,on_behalf_of,action,acted_at FROM oa_flow.approval_node_log WHERE instance_id=i.id AND action IN ('APPROVE','REJECT') ORDER BY id DESC LIMIT 1) n ON true
+ WHERE r.payload_json::jsonb-&gt;&gt;'tenant_id'=#{tenant} AND r.payload_json::jsonb-&gt;&gt;'application_id'=#{app} AND r.payload_json::jsonb-&gt;&gt;'environment'=#{env}
+ AND i.status='FINISHED' AND i.outcome IN ('APPROVED','REJECTED')
+ AND NOT EXISTS(SELECT 1 FROM oa_flow.central_decision_outbox o WHERE o.request_id=r.request_id)
+ ORDER BY r.request_id LIMIT 20
+ </select>
+ <insert id="enqueueDecision">INSERT INTO oa_flow.central_decision_outbox(request_id,event_id,payload_json,tenant_id,application_id,environment) VALUES(#{request},#{event},#{payload},#{tenant},#{app},#{env}) ON CONFLICT DO NOTHING</insert>
+ <select id="claimDecision" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Delivery" affectData="true" flushCache="true">
+ WITH due AS (SELECT request_id FROM oa_flow.central_decision_outbox WHERE tenant_id=#{tenant} AND application_id=#{app} AND environment=#{env} AND attempts &lt;5 AND next_attempt_at &lt;=clock_timestamp()
+ AND (state='PENDING' OR (state='RUNNING' AND lease_until &lt;clock_timestamp())) ORDER BY next_attempt_at,request_id LIMIT 1 FOR UPDATE SKIP LOCKED)
+ UPDATE oa_flow.central_decision_outbox o SET state='RUNNING',attempts=attempts+1,lease_token=#{lease},lease_until=clock_timestamp()+interval '30 seconds',updated_at=clock_timestamp()
+ FROM due d WHERE d.request_id=o.request_id RETURNING o.request_id,o.event_id,o.payload_json
+ </select>
+ <update id="finishDecision">UPDATE oa_flow.central_decision_outbox SET state='DONE',lease_until=NULL,last_error=NULL,updated_at=clock_timestamp() WHERE request_id=#{request} AND state='RUNNING' AND lease_token=#{lease} AND lease_until &gt;clock_timestamp()</update>
+ <update id="failDecision">UPDATE oa_flow.central_decision_outbox SET state=CASE WHEN attempts=5 THEN 'DEAD' ELSE 'PENDING' END,lease_until=NULL,last_error='CALLBACK_UNCONFIRMED',next_attempt_at=clock_timestamp()+make_interval(secs=&gt;power(2,attempts)::int),updated_at=clock_timestamp() WHERE request_id=#{request} AND state='RUNNING' AND lease_token=#{lease} AND lease_until &gt;clock_timestamp()</update>
+ <update id="exhaustDecisions">WITH expired AS (SELECT request_id FROM oa_flow.central_decision_outbox WHERE state='RUNNING' AND attempts=5 AND lease_until &lt;clock_timestamp() ORDER BY request_id LIMIT 100 FOR UPDATE SKIP LOCKED)
+ UPDATE oa_flow.central_decision_outbox o SET state='DEAD',last_error='CALLBACK_UNCONFIRMED',updated_at=clock_timestamp() FROM expired e WHERE o.request_id=e.request_id</update>
+</mapper>

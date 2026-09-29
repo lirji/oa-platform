@@ -284,6 +284,8 @@ public class ApprovalService {
                 if (info.isEmpty()) continue;   // 中台还没起流程，下一轮再看
                 if (ins.getProcessInstanceId() == null || ins.getProcessInstanceId().isBlank()) {
                     instanceMapper.bindProcessInstance(ins.getId(), info.get().processInstanceId());
+                    // Kafka启动与待办对账可先于实例回绑；回绑后补齐既有待办业务引用，不能只补首次插入。
+                    gateway.findTasks(ins.getProcessDefinitionKey(), ins.getBusinessKey()).forEach(this::projectTodo);
                     bound++;
                 }
                 if (!info.get().running()) {

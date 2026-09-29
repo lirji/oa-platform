@@ -55,7 +55,7 @@ public final class FlowMappers {
                           @Param("onBehalfOf") String onBehalfOf, @Param("action") String action,
                           @Param("comment") String comment);
 
-        @Update("UPDATE oa_flow.approval_instance SET status='FINISHED', outcome=#{outcome}, finished_at=now() WHERE id=#{id} AND status&lt;&gt;'FINISHED'")
+        @Update("UPDATE oa_flow.approval_instance SET status='FINISHED', outcome=#{outcome}, finished_at=now() WHERE id=#{id} AND status<>'FINISHED'")
         int finish(@Param("id") Long id, @Param("outcome") String outcome);
 
         @Select("SELECT action FROM oa_flow.approval_node_log WHERE instance_id=#{instanceId} ORDER BY id DESC LIMIT 1")

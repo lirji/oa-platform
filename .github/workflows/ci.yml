@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: lirji/auth-platform
-          ref: b11d080ae38024c482ab49e4dd3a9dce2993835e # P1-04 协议与受控导入器，不依赖浮动 main
+          ref: 40dbcf2ce86d21b83be91b3c9af6111f514ef4df # P4审批协议与治理实现；auth先合并后OA，不依赖浮动main
           path: .ci-deps/auth-platform
       - uses: actions/setup-java@v4
         with:
@@ -62,6 +62,7 @@ jobs:
         run: python3 .ci-deps/auth-platform/deploy/governance-test-db.py --container ${{ job.services.directory-postgres.id }} --port 5432 --directory .local/governance-ci
       - name: Test backend reactor and real directory transactions
         env:
+          OA_APPROVAL_TEST_CONFIG: ${{ github.workspace }}/.local/directory-ci/database.properties
           OA_DIRECTORY_TEST_CONFIG: ${{ github.workspace }}/.local/directory-ci/database.properties
           OA_AUTH_DIRECTORY_TEST_CONFIG: ${{ github.workspace }}/.local/governance-ci/database.properties
         run: mvn -B verify -Pdirectory-it

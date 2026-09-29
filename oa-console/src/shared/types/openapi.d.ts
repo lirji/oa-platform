@@ -431,6 +431,22 @@ export type paths = {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/flow/central-access/tasks/{taskId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["detail_1"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/flow/docs": {
         readonly parameters: {
             readonly query?: never;
@@ -1695,6 +1711,38 @@ export type paths = {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/internal/iam-approval/v1/lookup": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post: operations["lookup"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/internal/iam-approval/v1/start": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post: operations["start"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
 };
 export type webhooks = Record<string, never>;
 export type components = {
@@ -1794,6 +1842,12 @@ export type components = {
             /** Format: int64 */
             readonly assetId: number;
             readonly remark?: string;
+        };
+        readonly Clause: {
+            readonly includeRoot?: boolean;
+            /** @enum {string} */
+            readonly kind?: "TENANT_ALL" | "SELF" | "DEPARTMENT" | "DEPARTMENT_TREE" | "SPECIFIED_STORES" | "SPECIFIED_SUPPLIERS" | "SPECIFIED_RESOURCES";
+            readonly values?: readonly string[];
         };
         readonly CompleteTask: {
             readonly comment?: string;
@@ -2573,6 +2627,13 @@ export type components = {
             readonly message?: string;
             readonly traceId?: string;
         };
+        readonly ResultStart: {
+            /** Format: int32 */
+            readonly code?: number;
+            readonly data?: components["schemas"]["Start"];
+            readonly message?: string;
+            readonly traceId?: string;
+        };
         readonly ResultVoid: {
             /** Format: int32 */
             readonly code?: number;
@@ -2663,6 +2724,12 @@ export type components = {
             /** Format: int64 */
             readonly tenantId?: number;
         };
+        readonly Rule: {
+            readonly clauses?: readonly components["schemas"]["Clause"][];
+            readonly resourceType?: string;
+            /** Format: int64 */
+            readonly version?: number;
+        };
         readonly SetReportingLine: {
             /** Format: int64 */
             readonly managerEmployeeId: number;
@@ -2682,6 +2749,31 @@ export type components = {
             readonly resourceType: string;
             readonly subjectId?: string;
             readonly subjectType: string;
+        };
+        readonly Start: {
+            readonly applicationId?: string;
+            /** Format: int64 */
+            readonly approverGeneration?: number;
+            readonly approverMembershipId?: string;
+            readonly capabilities?: readonly string[];
+            readonly environment?: string;
+            /** Format: int64 */
+            readonly generation?: number;
+            readonly membershipId?: string;
+            readonly policyHash?: string;
+            readonly policyId?: string;
+            /** Format: int64 */
+            readonly policyVersion?: number;
+            readonly reason?: string;
+            readonly requestId?: string;
+            /** Format: int64 */
+            readonly requestVersion?: number;
+            readonly roleId?: string;
+            readonly scopeRule?: components["schemas"]["Rule"];
+            readonly snapshotHash?: string;
+            readonly tenantId?: string;
+            readonly validFrom?: string;
+            readonly validTo?: string;
         };
         readonly SubmitDoc: {
             readonly bizType?: string;
@@ -3532,6 +3624,28 @@ export interface operations {
                 };
                 content: {
                     readonly "*/*": components["schemas"]["ResultMapStringObject"];
+                };
+            };
+        };
+    };
+    readonly detail_1: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly taskId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["ResultStart"];
                 };
             };
         };
@@ -5605,6 +5719,46 @@ export interface operations {
                 };
                 content: {
                     readonly "*/*": components["schemas"]["ResultMapStringObject"];
+                };
+            };
+        };
+    };
+    readonly lookup: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["JsonNode"];
+                };
+            };
+        };
+    };
+    readonly start: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "*/*": components["schemas"]["JsonNode"];
                 };
             };
         };
