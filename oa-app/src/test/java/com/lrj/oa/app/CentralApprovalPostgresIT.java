@@ -32,6 +32,8 @@ import static org.mockito.Mockito.*;
 class CentralApprovalPostgresIT {
     private JdbcTemplate jdbc;
     private CentralApprovalService service;
+    private CentralApprovalMapper centralMapper;
+    private CentralApprovalProperties settings;
     private final String tenant=UUID.randomUUID().toString(),member=UUID.randomUUID().toString(),approver=UUID.randomUUID().toString();
     private DataSourceTransactionManager transactions;
 
@@ -41,7 +43,7 @@ class CentralApprovalPostgresIT {
         var properties=new Properties();try(var reader=Files.newBufferedReader(file)){properties.load(reader);}
         assertThat(properties.getProperty("jdbc.url")).matches("jdbc:postgresql://127\\.0\\.0\\.1:[0-9]+/auth_gov_p1_test_[a-z0-9_]+");
         var ds=new DriverManagerDataSource(properties.getProperty("jdbc.url"),properties.getProperty("jdbc.username"),properties.getProperty("jdbc.password"));
-        Flyway.configure().dataSource(ds).locations("classpath:db/migration").cleanDisabled(true).load().migrate();
+        Flyway.configure().dataSource(ds).locations("classpath:db/migration").outOfOrder(true).cleanDisabled(true).load().migrate();
         jdbc=new JdbcTemplate(ds);transactions=new DataSourceTransactionManager(ds);
         var configuration=new MybatisConfiguration();configuration.setMapUnderscoreToCamelCase(true);
         for(Class<?> type:List.of(CentralApprovalMapper.class,FlowMappers.ApprovalInstanceMapper.class,FlowMappers.FormTemplateMapper.class,OutboxMapper.class,TodoMapper.class)) configuration.addMapper(type);
@@ -53,7 +55,8 @@ class CentralApprovalPostgresIT {
                 session.getMapper(OutboxMapper.class),session.getMapper(TodoMapper.class),mock(WorkflowGateway.class),beans.getBeanProvider(LocalWorkflowGateway.class),new ObjectMapper(),mock(DelegationAuthorizationService.class)));
         var config=new CentralApprovalProperties(true,tenant,"commerce","test",1,"k".repeat(43),true,
                 Map.of(member,new CentralApprovalProperties.Bridge(1,"requester",null,1,"/1/"),approver,new CentralApprovalProperties.Bridge(1,"approver",null,1,"/1/")));
-        service=proxy(new CentralApprovalService(session.getMapper(CentralApprovalMapper.class),config,approvals));
+        centralMapper=session.getMapper(CentralApprovalMapper.class);settings=config;
+        service=proxy(new CentralApprovalService(centralMapper,config,approvals));
     }
     @SuppressWarnings("unchecked") private <T>T proxy(T target){
         var factory=new ProxyFactory(target);factory.setProxyTargetClass(true);
@@ -88,4 +91,35 @@ class CentralApprovalPostgresIT {
             assertThat(jdbc.queryForObject("select count(*) from oa_flow.approval_instance where business_key=?",Integer.class,c.businessKey())).isZero();
         } finally {jdbc.execute("alter table oa_flow.oa_outbox drop constraint "+constraint);}
     }
+    @Test void callbackRequiresActualActorLogAndConfirmedEngineEndThenRetriesFixedEvent() throws Exception {
+        var c=command();var instance=service.start(c);long id=Long.parseLong(instance.approvalInstanceId());
+        jdbc.update("update oa_flow.approval_instance set status='FINISHED',outcome='APPROVED' where id=?",id);
+        jdbc.update("insert into oa_flow.approval_node_log(instance_id,task_id,actor_user_id,action) values(?,?,'approver','APPROVE')",id,"task-p4");
+        var workflow=mock(WorkflowGateway.class);when(workflow.remote()).thenReturn(true);
+        when(workflow.findProcess(c.businessKey())).thenReturn(Optional.empty());
+        var server=com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1",0),0);
+        var received=new java.util.ArrayList<String>();var respondOk=new java.util.concurrent.atomic.AtomicBoolean();
+        server.createContext("/internal/oa-approval/v1/events",exchange->{
+            byte[] body=exchange.getRequestBody().readAllBytes();
+            com.lrj.authz.protocol.ApprovalSignature.verify("k".repeat(43),"oa-platform","test",exchange.getRequestURI().getPath(),body,exchange.getRequestHeaders().getFirst(com.lrj.authz.protocol.ApprovalSignature.HEADER),Instant.now());
+            received.add(new String(body,java.nio.charset.StandardCharsets.UTF_8));
+            var event=CentralApprovalWire.read(body,Decision.class);
+            byte[] response=CentralApprovalWire.body(new Receipt(event.eventId(),"RECEIVED",null)).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(respondOk.get()?202:503,response.length);exchange.getResponseBody().write(response);exchange.close();
+        });server.start();
+        try {
+            var delivery=new CentralDecisionDelivery(centralMapper,settings,workflow,transactions,"http://127.0.0.1:"+server.getAddress().getPort()+"/internal/oa-approval/v1/events","k".repeat(43));
+            delivery.capture();
+            assertThat(jdbc.queryForObject("select count(*) from oa_flow.central_decision_outbox where request_id=?",Integer.class,c.requestId())).isZero();
+            when(workflow.findProcess(c.businessKey())).thenReturn(Optional.of(new WorkflowGateway.ProcessInfo("real-ref",c.businessKey(),false)));
+            when(workflow.findTasks("oaGenericApproval",c.businessKey())).thenReturn(List.of());
+            delivery.capture();delivery.capture();delivery.deliver();
+            assertThat(jdbc.queryForObject("select state from oa_flow.central_decision_outbox where request_id=?",String.class,c.requestId())).isEqualTo("PENDING");
+            jdbc.update("update oa_flow.central_decision_outbox set next_attempt_at=clock_timestamp() where request_id=?",c.requestId());
+            respondOk.set(true);delivery.deliver();
+            assertThat(received).hasSize(2);assertThat(received.get(0)).isEqualTo(received.get(1));
+            assertThat(jdbc.queryForObject("select state from oa_flow.central_decision_outbox where request_id=?",String.class,c.requestId())).isEqualTo("DONE");
+        } finally {server.stop(0);}
+    }
+
 }
