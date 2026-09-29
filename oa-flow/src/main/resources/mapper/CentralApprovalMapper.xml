@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper">
+ <insert id="reserve">INSERT INTO oa_flow.central_access_request(request_id,request_version,snapshot_hash,payload_hash,payload_json)
+ VALUES(#{id},#{version},#{hash},#{payloadHash},#{payload}) ON CONFLICT DO NOTHING</insert>
+ <select id="lock" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT request_id,request_version,snapshot_hash,payload_hash,payload_json,instance_id FROM oa_flow.central_access_request WHERE request_id=#{id} FOR UPDATE</select>
+ <select id="find" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT request_id,request_version,snapshot_hash,payload_hash,payload_json,instance_id FROM oa_flow.central_access_request WHERE request_id=#{id}</select>
+ <update id="bind">UPDATE oa_flow.central_access_request SET instance_id=#{instance} WHERE request_id=#{id} AND instance_id IS NULL</update>
+ <insert id="nonce">INSERT INTO oa_flow.central_approval_nonce(nonce) VALUES(#{nonce}) ON CONFLICT DO NOTHING</insert>
+</mapper>

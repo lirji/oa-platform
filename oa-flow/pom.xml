@@ -12,6 +12,7 @@
   <name>oa-flow</name>
   <description>审批域：表单引擎 + 单据 + workflow-platform 集成 + todo_item CQRS 读模型</description>
   <dependencies>
+    <dependency><groupId>com.lrj.authz</groupId><artifactId>auth-platform-protocol</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-common</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-protocol</artifactId></dependency>
     <dependency><groupId>com.lrj.oa</groupId><artifactId>oa-security</artifactId></dependency>
