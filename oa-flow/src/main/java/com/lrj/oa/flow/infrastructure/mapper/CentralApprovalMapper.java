@@ -12,12 +12,14 @@ public interface CentralApprovalMapper {
     Mapping lock(@Param("id") String id);
     /** 查询既有结果，不推断未完成远程任务。 */
     Mapping find(@Param("id") String id);
+    /** 通过真实任务业务键读取同一固定申请，不开放任意成员查询。 */
+    Mapping findBusiness(@Param("business") String business);
     /** 唯一实例只能绑定一次。 */
     int bind(@Param("id") String id,@Param("instance") long instance);
     /** 验签后登记nonce，重复传输不可第二次触发控制器。 */
     int nonce(@Param("nonce") String nonce);
     /** 只选择有实际办理日志的终态单据；没有人工动作不能推断批准。 */
-    java.util.List<Terminal> terminals();
+    java.util.List<Terminal> terminals(@Param("tenant") String tenant,@Param("app") String app,@Param("env") String env);
     /** 固定事件与申请来源唯一，重试不重新生成事件ID或时间。 */
     int enqueueDecision(@Param("request") String request,@Param("event") String event,@Param("payload") String payload,@Param("tenant") String tenant,@Param("app") String app,@Param("env") String env);
     /** 多进程有界领取，旧租约不能覆盖新回执。 */

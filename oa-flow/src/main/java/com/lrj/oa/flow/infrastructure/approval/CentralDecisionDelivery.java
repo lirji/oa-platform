@@ -45,7 +45,7 @@ public class CentralDecisionDelivery {
     @Scheduled(fixedDelayString="${oa.flow.central-approval.capture-ms:5000}")
     public void capture() {
         if(!workflow.remote()) return;
-        for(var terminal:mapper.terminals()) {
+        for(var terminal:mapper.terminals(config.tenantId(),config.applicationId(),config.environment())) {
             try {
                 var start=CentralApprovalWire.read(terminal.payloadJson().getBytes(StandardCharsets.UTF_8),Start.class);
                 if(!config.tenantId().equals(start.tenantId()) || !config.applicationId().equals(start.applicationId()) || !config.environment().equals(start.environment())) continue;

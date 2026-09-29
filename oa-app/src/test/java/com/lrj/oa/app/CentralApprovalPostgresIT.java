@@ -31,6 +31,8 @@ import static org.mockito.Mockito.*;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CentralApprovalPostgresIT {
     private JdbcTemplate jdbc;
+    private ApprovalService approvals;
+    private WorkflowGateway approvalWorkflow;
     private CentralApprovalService service;
     private CentralApprovalMapper centralMapper;
     private CentralApprovalProperties settings;
@@ -51,8 +53,9 @@ class CentralApprovalPostgresIT {
         factory.setMapperLocations(new PathMatchingResourcePatternResolver().getResources("classpath*:mapper/CentralApprovalMapper.xml"));
         var session=new SqlSessionTemplate(factory.getObject());
         var beans=new DefaultListableBeanFactory();
-        var approvals=proxy(new ApprovalService(session.getMapper(FlowMappers.ApprovalInstanceMapper.class),session.getMapper(FlowMappers.FormTemplateMapper.class),
-                session.getMapper(OutboxMapper.class),session.getMapper(TodoMapper.class),mock(WorkflowGateway.class),beans.getBeanProvider(LocalWorkflowGateway.class),new ObjectMapper(),mock(DelegationAuthorizationService.class)));
+        approvalWorkflow=mock(WorkflowGateway.class);
+        approvals=proxy(new ApprovalService(session.getMapper(FlowMappers.ApprovalInstanceMapper.class),session.getMapper(FlowMappers.FormTemplateMapper.class),
+                session.getMapper(OutboxMapper.class),session.getMapper(TodoMapper.class),approvalWorkflow,beans.getBeanProvider(LocalWorkflowGateway.class),new ObjectMapper(),mock(DelegationAuthorizationService.class)));
         var config=new CentralApprovalProperties(true,tenant,"commerce","test",1,"k".repeat(43),true,
                 Map.of(member,new CentralApprovalProperties.Bridge(1,"requester",null,1,"/1/"),approver,new CentralApprovalProperties.Bridge(1,"approver",null,1,"/1/")));
         centralMapper=session.getMapper(CentralApprovalMapper.class);settings=config;
@@ -63,6 +66,32 @@ class CentralApprovalPostgresIT {
         factory.addAdvice(new TransactionInterceptor(transactions,new AnnotationTransactionAttributeSource()));return (T)factory.getProxy();
     }
     private Start command(){return new Start(tenant,"commerce","test",UUID.randomUUID().toString(),1,"a".repeat(64),UUID.randomUUID().toString(),1,"b".repeat(64),member,1,approver,1,UUID.randomUUID().toString(),List.of("commerce.store.read"),new ScopeDtos.Rule(1,"store",List.of(new ScopeDtos.Clause(ScopeDtos.Kind.TENANT_ALL,List.of(),false))),Instant.now().toString(),Instant.now().plusSeconds(60).toString(),"测试");}
+    @Test void asynchronousBindingRepairsTodoMetadataWithoutRevivingFinishedTask() {
+        var c=command();var instance=service.start(c);String pid=UUID.randomUUID().toString(),taskId=UUID.randomUUID().toString();
+        var task=new WorkflowGateway.Task(taskId,pid,"oaGenericApproval",c.businessKey(),"审批","approver",null);
+        approvals.projectTodo(task);
+        assertThat(jdbc.queryForObject("select instance_id from oa_flow.todo_item where task_id=?",Long.class,taskId)).isNull();
+        when(approvalWorkflow.remote()).thenReturn(true);
+        when(approvalWorkflow.findProcess(c.businessKey())).thenReturn(Optional.of(new WorkflowGateway.ProcessInfo(pid,c.businessKey(),true)));
+        when(approvalWorkflow.findTasks("oaGenericApproval",c.businessKey())).thenReturn(List.of(task));
+        try {
+            approvals.reconcileInstances();
+            when(approvalWorkflow.findTasks(null,null)).thenReturn(List.of(task));
+            var review=new CentralApprovalReview(centralMapper,settings,approvalWorkflow);
+            try {
+                com.lrj.oa.security.context.UserContextHolder.set(new com.lrj.oa.security.context.UserContext("approver","approver",null,1L,"/1/",1L));
+                assertThat(review.review(taskId)).isEqualTo(c);
+                com.lrj.oa.security.context.UserContextHolder.set(new com.lrj.oa.security.context.UserContext("requester","requester",null,1L,"/1/",1L));
+                assertThatThrownBy(()->review.review(taskId)).isInstanceOf(com.lrj.oa.common.exception.BusinessException.class);
+            } finally {com.lrj.oa.security.context.UserContextHolder.clear();}
+            assertThat(jdbc.queryForObject("select instance_id from oa_flow.todo_item where task_id=?",Long.class,taskId)).isEqualTo(Long.parseLong(instance.approvalInstanceId()));
+            assertThat(jdbc.queryForObject("select biz_type from oa_flow.todo_item where task_id=?",String.class,taskId)).isEqualTo("CENTRAL_ACCESS");
+            jdbc.update("update oa_flow.todo_item set state='DONE' where task_id=?",taskId);approvals.projectTodo(task);
+            assertThat(jdbc.queryForObject("select state from oa_flow.todo_item where task_id=?",String.class,taskId)).isEqualTo("DONE");
+            approvals.onProcessFinished(pid,"APPROVED");
+            assertThat(jdbc.queryForObject("select status from oa_flow.approval_instance where id=?",String.class,Long.parseLong(instance.approvalInstanceId()))).isEqualTo("FINISHED");
+        } finally {when(approvalWorkflow.remote()).thenReturn(false);}
+    }
     @Test void concurrentStartsAndLostResponseRecoveryHaveOneRealInstanceAndOutbox() throws Exception {
         var command=command();
         try(var pool=Executors.newFixedThreadPool(3)){
@@ -110,6 +139,7 @@ class CentralApprovalPostgresIT {
         try {
             var delivery=new CentralDecisionDelivery(centralMapper,settings,workflow,transactions,"http://127.0.0.1:"+server.getAddress().getPort()+"/internal/oa-approval/v1/events","k".repeat(43));
             delivery.capture();
+            assertThat(centralMapper.terminals(UUID.randomUUID().toString(),"commerce","test")).isEmpty();
             assertThat(jdbc.queryForObject("select count(*) from oa_flow.central_decision_outbox where request_id=?",Integer.class,c.requestId())).isZero();
             when(workflow.findProcess(c.businessKey())).thenReturn(Optional.of(new WorkflowGateway.ProcessInfo("real-ref",c.businessKey(),false)));
             when(workflow.findTasks("oaGenericApproval",c.businessKey())).thenReturn(List.of());

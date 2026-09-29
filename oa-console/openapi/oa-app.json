@@ -3959,6 +3959,76 @@
           }
         }
       }
+    },
+    "/api/v1/flow/central-access/tasks/{taskId}": {
+      "get": {
+        "tags": [
+          "central-access-review-controller"
+        ],
+        "operationId": "detail_1",
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultStart"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/iam-approval/v1/lookup": {
+      "post": {
+        "tags": [
+          "central-approval-controller"
+        ],
+        "operationId": "lookup",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/iam-approval/v1/start": {
+      "post": {
+        "tags": [
+          "central-approval-controller"
+        ],
+        "operationId": "start",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonNode"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7064,6 +7134,137 @@
           },
           "traceId": {
             "type": "string"
+          }
+        }
+      },
+      "ResultStart": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Start"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "Start": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "requestVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "snapshotHash": {
+            "type": "string"
+          },
+          "policyId": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "policyHash": {
+            "type": "string"
+          },
+          "membershipId": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "approverMembershipId": {
+            "type": "string"
+          },
+          "approverGeneration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopeRule": {
+            "$ref": "#/components/schemas/Rule"
+          },
+          "validFrom": {
+            "type": "string"
+          },
+          "validTo": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "Rule": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "clauses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Clause"
+            }
+          }
+        }
+      },
+      "Clause": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TENANT_ALL",
+              "SELF",
+              "DEPARTMENT",
+              "DEPARTMENT_TREE",
+              "SPECIFIED_STORES",
+              "SPECIFIED_SUPPLIERS",
+              "SPECIFIED_RESOURCES"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includeRoot": {
+            "type": "boolean"
           }
         }
       }

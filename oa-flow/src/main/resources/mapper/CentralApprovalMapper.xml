@@ -5,13 +5,16 @@
  VALUES(#{id},#{version},#{hash},#{payloadHash},#{payload}) ON CONFLICT DO NOTHING</insert>
  <select id="lock" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT request_id,request_version,snapshot_hash,payload_hash,payload_json,instance_id FROM oa_flow.central_access_request WHERE request_id=#{id} FOR UPDATE</select>
  <select id="find" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT request_id,request_version,snapshot_hash,payload_hash,payload_json,instance_id FROM oa_flow.central_access_request WHERE request_id=#{id}</select>
+ <select id="findBusiness" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Mapping">SELECT r.request_id,r.request_version,r.snapshot_hash,r.payload_hash,r.payload_json,r.instance_id
+ FROM oa_flow.central_access_request r JOIN oa_flow.approval_instance i ON i.id=r.instance_id WHERE i.business_key=#{business} AND i.biz_type='CENTRAL_ACCESS'</select>
  <update id="bind">UPDATE oa_flow.central_access_request SET instance_id=#{instance} WHERE request_id=#{id} AND instance_id IS NULL</update>
  <insert id="nonce">INSERT INTO oa_flow.central_approval_nonce(nonce) VALUES(#{nonce}) ON CONFLICT DO NOTHING</insert>
  <select id="terminals" resultType="com.lrj.oa.flow.infrastructure.mapper.CentralApprovalMapper$Terminal">
  SELECT r.payload_json,i.id instance_id,i.outcome,n.actor_user_id,n.on_behalf_of,n.action,n.acted_at
  FROM oa_flow.central_access_request r JOIN oa_flow.approval_instance i ON i.id=r.instance_id
  JOIN LATERAL (SELECT actor_user_id,on_behalf_of,action,acted_at FROM oa_flow.approval_node_log WHERE instance_id=i.id AND action IN ('APPROVE','REJECT') ORDER BY id DESC LIMIT 1) n ON true
- WHERE i.status='FINISHED' AND i.outcome IN ('APPROVED','REJECTED')
+ WHERE r.payload_json::jsonb-&gt;&gt;'tenant_id'=#{tenant} AND r.payload_json::jsonb-&gt;&gt;'application_id'=#{app} AND r.payload_json::jsonb-&gt;&gt;'environment'=#{env}
+ AND i.status='FINISHED' AND i.outcome IN ('APPROVED','REJECTED')
  AND NOT EXISTS(SELECT 1 FROM oa_flow.central_decision_outbox o WHERE o.request_id=r.request_id)
  ORDER BY r.request_id LIMIT 20
  </select>
