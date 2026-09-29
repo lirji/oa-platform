@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CentralAccessReview } from './CentralAccessReview'
 import { App, Button, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -21,6 +22,7 @@ interface MyApplication {
 
 const TODO_KEY = 'workbench-todos'
 const MINE_KEY = 'workbench-mine'
+const CENTRAL_ACCESS = 'CENTRAL_ACCESS'
 
 export default function WorkbenchPage() {
   const { message } = App.useApp()
@@ -29,6 +31,7 @@ export default function WorkbenchPage() {
   const permVersion = usePermVersion()
   const elevate = useElevationFlow()
   const [tab, setTab] = useState('todo')
+  const [review, setReview] = useState<string>()
 
   const todos = useQuery({
     queryKey: [TODO_KEY, permVersion],
@@ -47,6 +50,7 @@ export default function WorkbenchPage() {
       // 「已受理」而不是「已完成」：办理是同步的，但业务落地经事件链路最终一致。
       // 家族的诚实文案纪律：202 语义一律说"已受理"。
       message.success('已办理')
+      setReview(undefined)
       qc.invalidateQueries({ queryKey: [TODO_KEY] })
       qc.invalidateQueries({ queryKey: [MINE_KEY] })
     },
@@ -68,7 +72,7 @@ export default function WorkbenchPage() {
     },
     {
       title: '操作', key: 'op', width: 160, fixed: 'right',
-      render: (_, r) => (
+      render: (_, r) => r.bizType === CENTRAL_ACCESS ? <Button type="link" size="small" onClick={() => setReview(r.taskId)}>查看审批依据</Button> : (
         <Space>
           <Button type="link" size="small" loading={complete.isPending}
             onClick={() => complete.mutate({ taskId: r.taskId, outcome: 'APPROVE' })}>同意</Button>
@@ -140,6 +144,7 @@ export default function WorkbenchPage() {
           },
         ]}
       />
+      {review && <CentralAccessReview task={review} permissionVersion={permVersion} busy={complete.isPending} close={() => setReview(undefined)} complete={outcome => complete.mutate({ taskId: review, outcome })} />}
       {elevate.dialog}
     </>
   )
